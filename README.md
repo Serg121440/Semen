@@ -118,6 +118,20 @@ POST /api/rescue/{symbol}
 `POST /api/trade/plan` returns a DRY_RUN trade plan only. `POST
 /api/rescue/{symbol}` returns a Rescue Plan only.
 
+## Frontend Dashboard
+
+The Next.js frontend lives in `frontend/` and connects to FastAPI at
+`http://127.0.0.1:8000` by default.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend is calculation-only: it has no order submission buttons and never
+stores API keys or secrets in the browser.
+
 ## Quality Checks
 
 ```bash
@@ -144,4 +158,5 @@ app/
   models.py
 examples/
 tests/
+frontend/
 ```
