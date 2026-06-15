@@ -1,0 +1,8 @@
+pybit
+python - dotenv
+pydantic
+pytest
+ruff
+black
+typer
+rich
