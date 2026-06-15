@@ -92,6 +92,32 @@ current position, rescue mode summary, and scenario list. Action labels such as
 `[ Закрыть 25% ]` are safe prompts only in this version; they do not send
 orders.
 
+## FastAPI Backend
+
+The web API is read-only / calculation-only in the MVP. It never exposes API
+secrets and does not send orders.
+
+Run locally:
+
+```bash
+uvicorn app.web_api:api --reload --host 127.0.0.1 --port 8000
+```
+
+Endpoints:
+
+```text
+GET  /api/health
+GET  /api/account/balance
+GET  /api/market/{symbol}
+GET  /api/positions
+GET  /api/positions/{symbol}
+POST /api/trade/plan
+POST /api/rescue/{symbol}
+```
+
+`POST /api/trade/plan` returns a DRY_RUN trade plan only. `POST
+/api/rescue/{symbol}` returns a Rescue Plan only.
+
 ## Quality Checks
 
 ```bash
@@ -114,6 +140,7 @@ app/
   risk_service.py
   rounding_service.py
   trade_planner.py
+  web_api.py
   models.py
 examples/
 tests/

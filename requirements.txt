@@ -6,3 +6,6 @@ ruff
 black
 typer
 rich
+fastapi
+uvicorn
+httpx
