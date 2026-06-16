@@ -1,0 +1,13 @@
+{
+  "name": "semenfront-deploy",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "postinstall": "npm --prefix frontend install",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
