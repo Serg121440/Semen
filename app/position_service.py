@@ -12,12 +12,24 @@ class PositionService:
         self.session = session
         self.settings = settings
 
-    def get_positions(self, category: str, symbol: str | None = None) -> dict:
+    def get_positions(
+        self,
+        category: str,
+        symbol: str | None = None,
+        settle_coin: str | None = None,
+    ) -> dict:
         self.settings.require_private_credentials()
         params = {"category": category}
         if symbol:
             params["symbol"] = symbol
-        logger.info("Fetching positions: category=%s symbol=%s", category, symbol)
+        if settle_coin:
+            params["settleCoin"] = settle_coin
+        logger.info(
+            "Fetching positions: category=%s symbol=%s settle_coin=%s",
+            category,
+            symbol,
+            settle_coin,
+        )
         return ensure_success(self.session.get_positions(**params), "get_positions")
 
     def get_position_by_symbol(self, category: str, symbol: str) -> dict | None:

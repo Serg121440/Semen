@@ -48,7 +48,12 @@ class FakeMarketService:
 
 
 class FakePositionService:
-    def get_positions(self, category: str, symbol: str | None = None):
+    def get_positions(
+        self,
+        category: str,
+        symbol: str | None = None,
+        settle_coin: str | None = None,
+    ):
         return {"result": {"list": [self.get_position_by_symbol(category, "BTCUSDT")]}}
 
     def get_position_by_symbol(self, category: str, symbol: str):

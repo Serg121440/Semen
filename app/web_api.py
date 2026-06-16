@@ -149,11 +149,17 @@ def market(
 @api.get("/api/positions")
 def positions(
     category: str = "linear",
+    symbol: str | None = None,
+    settle_coin: str | None = "USDT",
     _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:
-        response = services.position_service.get_positions(category=category)
+        response = services.position_service.get_positions(
+            category=category,
+            symbol=symbol,
+            settle_coin=settle_coin if not symbol else None,
+        )
         items = response.get("result", {}).get("list", [])
         return {"category": category, "positions": items}
     except Exception as exc:
