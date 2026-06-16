@@ -6,6 +6,7 @@ import { MarketAnalysis } from "@/components/market-analysis";
 import { Metric } from "@/components/metric";
 import { PositionsTable } from "@/components/positions-table";
 import { StatusPill } from "@/components/status-pill";
+import { ScenarioDashboard } from "@/components/scenario-dashboard";
 import {
   averagingScenarioLabel,
   compact,
@@ -140,6 +141,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         selectedSide={selectedSide}
         view={view}
       />
+
+      <ScenarioDashboard />
 
       {view === "overview" ? (
         <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">

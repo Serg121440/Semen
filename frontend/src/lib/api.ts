@@ -51,19 +51,17 @@ export async function loadDashboard(
     null;
   const selectedSymbol = selectedPosition?.symbol ?? symbol;
   const selectedSide = selectedPosition?.side;
-  const market = await request<MarketResponse>(`/api/market/${selectedSymbol}`);
-  let rescue: RescueResponse | null = null;
-  let trend: TrendResponse | null = null;
-  let marketAnalysis: MarketAnalysisResponse | null = null;
-
-  if (selectedPosition) {
-    rescue = await request<RescueResponse>(`/api/rescue/${selectedSymbol}`, {
-      method: "POST",
-      body: JSON.stringify({ side: selectedSide })
-    });
-    trend = rescue.trend;
-    marketAnalysis = rescue.market_analysis;
-  }
+  const [market, rescue] = await Promise.all([
+    request<MarketResponse>(`/api/market/${selectedSymbol}`),
+    selectedPosition
+      ? request<RescueResponse>(`/api/rescue/${selectedSymbol}`, {
+          method: "POST",
+          body: JSON.stringify({ side: selectedSide })
+        })
+      : Promise.resolve(null)
+  ]);
+  const trend: TrendResponse | null = rescue?.trend ?? null;
+  const marketAnalysis: MarketAnalysisResponse | null = rescue?.market_analysis ?? null;
 
   return {
     health,
