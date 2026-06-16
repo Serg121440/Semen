@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.config import Settings  # noqa: E402
 from app.models import InstrumentRules, TradePlan  # noqa: E402
-from app.web_api import api, get_services  # noqa: E402
+from app.web_api import api, get_services, require_api_auth  # noqa: E402
 
 
 class FakeAccountService:
@@ -106,6 +106,7 @@ class FakeServices:
 @pytest.fixture()
 def client():
     api.dependency_overrides[get_services] = lambda: FakeServices()
+    api.dependency_overrides[require_api_auth] = lambda: None
     with TestClient(api) as test_client:
         yield test_client
     api.dependency_overrides.clear()

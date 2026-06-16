@@ -132,6 +132,14 @@ npm run dev
 The frontend is calculation-only: it has no order submission buttons and never
 stores API keys or secrets in the browser.
 
+Production safety:
+
+- Set `WEB_AUTH_REQUIRED=true` on the backend.
+- Set a long random `WEB_API_TOKEN` on the backend.
+- Set the same value as `BACKEND_API_TOKEN` on the frontend host.
+- Do not use `NEXT_PUBLIC_*` for backend tokens.
+- Keep `LIVE_TRADING=false` and `DRY_RUN=true` until Testnet order work starts.
+
 Routes:
 
 ```text
@@ -141,6 +149,24 @@ Routes:
 
 `/rescue` shows the full Rescue Plan, scenarios A/B/C/D, target average
 calculation, copy-plan action, and refresh action. It remains calculation-only.
+
+Deploy split:
+
+```text
+Backend env:
+BYBIT_API_KEY=...
+BYBIT_API_SECRET=...
+BYBIT_TESTNET=false
+DRY_RUN=true
+LIVE_TRADING=false
+WEB_AUTH_REQUIRED=true
+WEB_API_TOKEN=<long-random-token>
+WEB_CORS_ORIGINS=https://your-frontend-domain
+
+Frontend env:
+BACKEND_API_BASE_URL=https://your-backend-domain
+BACKEND_API_TOKEN=<same-long-random-token>
+```
 
 ## Quality Checks
 

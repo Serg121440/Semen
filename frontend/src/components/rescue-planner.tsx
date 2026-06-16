@@ -8,8 +8,6 @@ import { Metric } from "@/components/metric";
 import { compact, money, riskClass } from "@/lib/format";
 import type { RescuePlan, RescueResponse } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
-
 type RescuePlannerProps = {
   initialPlan: RescuePlan;
   symbol: string;
@@ -24,7 +22,7 @@ export function RescuePlanner({ initialPlan, symbol }: RescuePlannerProps) {
   function refreshPlan(nextTargetAvg?: string) {
     startTransition(async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/rescue/${symbol}`, {
+        const response = await fetch(`/api/rescue/${symbol}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

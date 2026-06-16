@@ -1,7 +1,8 @@
 from decimal import Decimal
+from secrets import compare_digest
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -60,6 +61,20 @@ def get_services() -> ServiceContainer:
     return create_services()
 
 
+def require_api_auth(authorization: str | None = Header(default=None)) -> None:
+    settings = load_settings()
+    if not settings.web_auth_required:
+        return
+    if not settings.web_api_token:
+        raise HTTPException(
+            status_code=503,
+            detail="WEB_API_TOKEN is required when WEB_AUTH_REQUIRED=true",
+        )
+    expected = f"Bearer {settings.web_api_token}"
+    if not authorization or not compare_digest(authorization, expected):
+        raise HTTPException(status_code=401, detail="Invalid API token")
+
+
 api = FastAPI(
     title="Bybit Trading Core API",
     version="0.1.0",
@@ -68,7 +83,7 @@ api = FastAPI(
 
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=list(load_settings().web_cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -82,11 +97,13 @@ def health(services: ServiceContainer = Depends(get_services)) -> dict[str, Any]
         "dry_run": services.settings.dry_run,
         "testnet": services.settings.testnet,
         "live_trading": False,
+        "auth_required": services.settings.web_auth_required,
     }
 
 
 @api.get("/api/account/balance")
 def account_balance(
+    _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:
@@ -110,6 +127,7 @@ def account_balance(
 def market(
     symbol: str,
     category: str = "linear",
+    _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:
@@ -131,6 +149,7 @@ def market(
 @api.get("/api/positions")
 def positions(
     category: str = "linear",
+    _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:
@@ -145,6 +164,7 @@ def positions(
 def position_by_symbol(
     symbol: str,
     category: str = "linear",
+    _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:
@@ -164,6 +184,7 @@ def position_by_symbol(
 @api.post("/api/trade/plan")
 def trade_plan(
     payload: TradePlanRequest,
+    _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:
@@ -191,6 +212,7 @@ def trade_plan(
 def rescue_plan(
     symbol: str,
     payload: RescueRequest | None = None,
+    _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
     try:

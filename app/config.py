@@ -30,6 +30,13 @@ class Settings:
     default_stop_loss_percent: Decimal = Decimal("1")
     default_take_profit_mode: str = "balanced"
     require_order_confirmation: bool = True
+    live_trading: bool = False
+    web_auth_required: bool = True
+    web_api_token: str | None = None
+    web_cors_origins: tuple[str, ...] = (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    )
 
     def require_private_credentials(self) -> None:
         missing = []
@@ -58,13 +65,26 @@ def load_settings() -> Settings:
             os.getenv("REQUIRE_ORDER_CONFIRMATION"),
             default=True,
         ),
+        live_trading=parse_bool(os.getenv("LIVE_TRADING"), default=False),
+        web_auth_required=parse_bool(os.getenv("WEB_AUTH_REQUIRED"), default=True),
+        web_api_token=os.getenv("WEB_API_TOKEN") or None,
+        web_cors_origins=tuple(
+            origin.strip()
+            for origin in os.getenv(
+                "WEB_CORS_ORIGINS",
+                "http://localhost:3000,http://127.0.0.1:3000",
+            ).split(",")
+            if origin.strip()
+        ),
     )
     logger.info(
-        "Configuration loaded: testnet=%s dry_run=%s account_type=%s symbol=%s require_confirmation=%s",
+        "Configuration loaded: testnet=%s dry_run=%s account_type=%s symbol=%s require_confirmation=%s live_trading=%s web_auth=%s",
         settings.testnet,
         settings.dry_run,
         settings.account_type,
         settings.default_symbol,
         settings.require_order_confirmation,
+        settings.live_trading,
+        settings.web_auth_required,
     )
     return settings
