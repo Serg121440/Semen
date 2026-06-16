@@ -1,0 +1,14 @@
+# Игнорировать всё
+/*
+
+# Кроме активных проектов и конфигов
+!ozon_supply/
+!.gitignore
+!.zshrc
+!.zprofile
+!.gitconfig
+
+# Стандартный мусор
+.DS_Store
+__pycache__/
+*.pyc
