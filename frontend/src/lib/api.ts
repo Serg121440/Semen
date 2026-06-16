@@ -6,6 +6,7 @@ import type {
   PositionsResponse,
   RescueResponse
 } from "./types";
+import "./tls";
 
 const API_BASE = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8000";
 const API_TOKEN = process.env.BACKEND_API_TOKEN;
