@@ -5,6 +5,7 @@ import type {
   MarketResponse,
   PositionsResponse,
   RescueResponse,
+  MarketAnalysisResponse,
   TrendResponse
 } from "./types";
 import "./tls";
@@ -53,6 +54,7 @@ export async function loadDashboard(
   const market = await request<MarketResponse>(`/api/market/${selectedSymbol}`);
   let rescue: RescueResponse | null = null;
   let trend: TrendResponse | null = null;
+  let marketAnalysis: MarketAnalysisResponse | null = null;
 
   if (selectedPosition) {
     rescue = await request<RescueResponse>(`/api/rescue/${selectedSymbol}`, {
@@ -60,9 +62,19 @@ export async function loadDashboard(
       body: JSON.stringify({ side: selectedSide })
     });
     trend = rescue.trend;
+    marketAnalysis = rescue.market_analysis;
   }
 
-  return { health, balance, market, positions, rescue, selectedPosition, trend };
+  return {
+    health,
+    balance,
+    market,
+    positions,
+    rescue,
+    selectedPosition,
+    trend,
+    marketAnalysis
+  };
 }
 
 export async function loadRescue(

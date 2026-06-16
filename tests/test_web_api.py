@@ -8,6 +8,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.config import Settings  # noqa: E402
+from app.market_analysis_service import MarketAnalysisService  # noqa: E402
 from app.models import InstrumentRules, TradePlan  # noqa: E402
 from app.web_api import api, get_services, require_api_auth  # noqa: E402
 
@@ -47,7 +48,31 @@ class FakeMarketService:
             "result": {
                 "list": [
                     [str(index), "100", "101", "99", str(100 + index), "1", "1"]
-                    for index in range(1, 11)
+                    for index in range(1, 201)
+                ]
+            }
+        }
+
+    def get_orderbook(self, category: str, symbol: str, limit: int = 200):
+        return {
+            "result": {
+                "b": [["95", "10"], ["90", "20"]],
+                "a": [["105", "10"], ["110", "20"]],
+            }
+        }
+
+    def get_open_interest(
+        self,
+        category: str,
+        symbol: str,
+        interval_time: str = "15min",
+        limit: int = 50,
+    ):
+        return {
+            "result": {
+                "list": [
+                    {"openInterest": "1000"},
+                    {"openInterest": "950"},
                 ]
             }
         }
@@ -124,6 +149,7 @@ class FakeServices:
         self.settings = Settings(api_key="key", api_secret="secret", dry_run=True)
         self.account_service = FakeAccountService()
         self.market_service = FakeMarketService()
+        self.market_analysis_service = MarketAnalysisService(self.market_service)
         self.position_service = FakePositionService()
         self.trade_planner = FakeTradePlanner()
         self.rescue_service = FakeRescueService()
@@ -185,6 +211,7 @@ def test_rescue_endpoint_is_calculation_only(client) -> None:
     assert response.json()["status"] == "calculation_only"
     assert response.json()["rescue_plan"]["risk_score"] >= 30
     assert response.json()["trend"]["direction"] == "up"
+    assert response.json()["market_analysis"]["intervals"]["15"]["rsi14"] == 100
 
 
 def test_rescue_endpoint_can_select_short_side(client) -> None:
@@ -193,3 +220,11 @@ def test_rescue_endpoint_can_select_short_side(client) -> None:
     assert response.status_code == 200
     assert response.json()["rescue_plan"]["side"] == "Sell"
     assert response.json()["trend"]["alignment"] == "against_position"
+
+
+def test_market_analysis_endpoint(client) -> None:
+    response = client.get("/api/market/BTCUSDT/analysis?side=Buy")
+
+    assert response.status_code == 200
+    assert set(response.json()["intervals"]) == {"15", "60", "240", "D"}
+    assert response.json()["liquidity_map"]["zones"]

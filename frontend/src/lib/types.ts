@@ -45,6 +45,61 @@ export type TrendResponse = {
   summary: string;
 };
 
+export type TechnicalInterval = {
+  interval: string;
+  current_price: string;
+  direction: TrendDirection;
+  alignment: TrendAlignment;
+  strength: number;
+  move_percent: string;
+  ema20: string;
+  ema50: string;
+  rsi14: string;
+  macd: {
+    line: string;
+    signal: string;
+    histogram: string;
+  };
+  atr14: string;
+  support: string;
+  resistance: string;
+  volume_ratio: string;
+  summary: string;
+};
+
+export type OpenInterestPoint = {
+  interval: string;
+  open_interest: string | null;
+  change_percent: string | null;
+};
+
+export type LiquidityZone = {
+  price: string;
+  size: string;
+  notional: string;
+  side: "bid" | "ask" | "liquidation";
+  label: string;
+};
+
+export type MarketAnalysisResponse = {
+  symbol: string;
+  category: string;
+  intervals: Record<string, TechnicalInterval>;
+  open_interest: Record<string, OpenInterestPoint>;
+  liquidity_map: {
+    source: string;
+    bids: LiquidityZone[];
+    asks: LiquidityZone[];
+    zones: LiquidityZone[];
+  };
+  consensus: {
+    direction: TrendDirection;
+    alignment: TrendAlignment;
+    score: number;
+    summary: string;
+  };
+};
+
 export type Position = {
   symbol: string;
   side: "Buy" | "Sell" | "";
@@ -112,6 +167,7 @@ export type RescueResponse = {
   message: string;
   rescue_plan: RescuePlan;
   trend: TrendResponse | null;
+  market_analysis: MarketAnalysisResponse | null;
 };
 
 export type DashboardData = {
@@ -122,4 +178,5 @@ export type DashboardData = {
   rescue: RescueResponse | null;
   selectedPosition: Position | null;
   trend: TrendResponse | null;
+  marketAnalysis: MarketAnalysisResponse | null;
 };

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.account_service import AccountService
 from app.bybit_client import BybitClient
 from app.config import Settings, load_settings
+from app.market_analysis_service import MarketAnalysisService
 from app.market_service import MarketService
 from app.models import TradeSignal
 from app.order_service import OrderService
@@ -42,6 +43,7 @@ class ServiceContainer:
         self.settings = settings
         self.session = BybitClient(settings).get_http_session()
         self.market_service = MarketService(self.session)
+        self.market_analysis_service = MarketAnalysisService(self.market_service)
         self.account_service = AccountService(self.session, settings)
         self.position_service = PositionService(self.session, settings)
         self.order_service = OrderService(self.session, settings)
@@ -174,6 +176,26 @@ def market_trend(
         raise _http_error(exc) from exc
 
 
+@api.get("/api/market/{symbol}/analysis")
+def market_analysis(
+    symbol: str,
+    category: str = "linear",
+    side: str | None = None,
+    liquidation_price: Decimal | None = None,
+    _: None = Depends(require_api_auth),
+    services: ServiceContainer = Depends(get_services),
+) -> dict[str, Any]:
+    try:
+        return services.market_analysis_service.build_analysis(
+            category=category,
+            symbol=symbol,
+            side=side,
+            liquidation_price=liquidation_price,
+        )
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
 @api.get("/api/positions")
 def positions(
     category: str = "linear",
@@ -293,6 +315,13 @@ def rescue_plan(
                 symbol=symbol,
                 side=plan.side,
             ),
+            "market_analysis": _safe_market_analysis(
+                services=services,
+                category=request.category,
+                symbol=symbol,
+                side=plan.side,
+                liquidation_price=plan.liquidation_price,
+            ),
         }
     except HTTPException:
         raise
@@ -338,6 +367,24 @@ def _safe_trend_analysis(
             symbol=symbol,
             interval="15",
             side=side,
+        )
+    except Exception:
+        return None
+
+
+def _safe_market_analysis(
+    services: ServiceContainer,
+    category: str,
+    symbol: str,
+    side: str | None,
+    liquidation_price: Decimal | None,
+) -> dict[str, Any] | None:
+    try:
+        return services.market_analysis_service.build_analysis(
+            category=category,
+            symbol=symbol,
+            side=side,
+            liquidation_price=liquidation_price,
         )
     except Exception:
         return None

@@ -65,6 +65,29 @@ class MarketService:
             "get_orderbook",
         )
 
+    def get_open_interest(
+        self,
+        category: str,
+        symbol: str,
+        interval_time: str = "15min",
+        limit: int = 50,
+    ) -> dict:
+        logger.info(
+            "Fetching open interest: category=%s symbol=%s interval=%s",
+            category,
+            symbol,
+            interval_time,
+        )
+        return ensure_success(
+            self.session.get_open_interest(
+                category=category,
+                symbol=symbol,
+                intervalTime=interval_time,
+                limit=limit,
+            ),
+            "get_open_interest",
+        )
+
     def get_instrument_rules(self, category: str, symbol: str) -> InstrumentRules:
         response = self.get_instruments_info(category=category, symbol=symbol)
         instruments = response.get("result", {}).get("list", [])

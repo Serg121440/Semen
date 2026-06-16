@@ -85,7 +85,13 @@ export default async function RescuePage({ searchParams }: RescuePageProps) {
         </Card>
       </section>
 
-      <RescuePlanner initialPlan={plan} symbol={symbol} side={plan.side} initialTrend={response.trend} />
+      <RescuePlanner
+        initialPlan={plan}
+        symbol={symbol}
+        side={plan.side}
+        initialTrend={response.trend}
+        initialMarketAnalysis={response.market_analysis}
+      />
 
       <footer className="border-t border-white/10 py-5 text-xs text-silver-500">
         Режим спасения в этом MVP только считает план. Тестовые ордера на Testnet подключим позже.

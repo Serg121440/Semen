@@ -4,6 +4,7 @@ import { Copy, RefreshCcw, Target } from "lucide-react";
 import { useState, useTransition } from "react";
 
 import { Card } from "@/components/card";
+import { MarketAnalysis } from "@/components/market-analysis";
 import { Metric } from "@/components/metric";
 import {
   averagingScenarioLabel,
@@ -18,23 +19,31 @@ import {
   translateStatus,
   translateWarning
 } from "@/lib/format";
-import type { RescuePlan, RescueResponse, TrendResponse } from "@/lib/types";
+import type {
+  MarketAnalysisResponse,
+  RescuePlan,
+  RescueResponse,
+  TrendResponse
+} from "@/lib/types";
 
 type RescuePlannerProps = {
   initialPlan: RescuePlan;
   symbol: string;
   side?: string;
   initialTrend?: TrendResponse | null;
+  initialMarketAnalysis?: MarketAnalysisResponse | null;
 };
 
 export function RescuePlanner({
   initialPlan,
   symbol,
   side,
-  initialTrend = null
+  initialTrend = null,
+  initialMarketAnalysis = null
 }: RescuePlannerProps) {
   const [plan, setPlan] = useState(initialPlan);
   const [trend, setTrend] = useState(initialTrend);
+  const [marketAnalysis, setMarketAnalysis] = useState(initialMarketAnalysis);
   const [targetAvg, setTargetAvg] = useState("");
   const [status, setStatus] = useState("Режим только расчетный. Ордер отправить нельзя.");
   const [isPending, startTransition] = useTransition();
@@ -56,6 +65,7 @@ export function RescuePlanner({
         const payload = (await response.json()) as RescueResponse;
         setPlan(payload.rescue_plan);
         setTrend(payload.trend ?? null);
+        setMarketAnalysis(payload.market_analysis ?? null);
         setStatus(translateStatus(payload.message));
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Не удалось обновить план.");
@@ -164,6 +174,8 @@ export function RescuePlanner({
           </div>
         )}
       </Card>
+
+      <MarketAnalysis analysis={marketAnalysis} />
 
       <section className="grid gap-4 xl:grid-cols-2">
         <Card title="Сценарий A: снизить риск">

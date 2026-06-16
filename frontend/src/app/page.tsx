@@ -2,6 +2,7 @@ import { RefreshCcw, ShieldAlert, TrendingUp } from "lucide-react";
 import Link from "next/link";
 
 import { Card } from "@/components/card";
+import { MarketAnalysis } from "@/components/market-analysis";
 import { Metric } from "@/components/metric";
 import { PositionsTable } from "@/components/positions-table";
 import { StatusPill } from "@/components/status-pill";
@@ -159,6 +160,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           selectedSide={activePosition?.side}
         />
       </Card>
+
+      <MarketAnalysis analysis={data.marketAnalysis} />
 
       {rescue ? (
         <section className="grid gap-4 xl:grid-cols-2">
