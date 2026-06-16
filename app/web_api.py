@@ -30,6 +30,7 @@ class TradePlanRequest(BaseModel):
 
 class RescueRequest(BaseModel):
     category: str = "linear"
+    side: str | None = None
     target_avg: Decimal | None = None
     target_exit: Decimal | None = None
     max_extra_margin: Decimal | None = None
@@ -146,6 +147,33 @@ def market(
         raise _http_error(exc) from exc
 
 
+@api.get("/api/market/{symbol}/trend")
+def market_trend(
+    symbol: str,
+    category: str = "linear",
+    interval: str = "15",
+    limit: int = 120,
+    side: str | None = None,
+    _: None = Depends(require_api_auth),
+    services: ServiceContainer = Depends(get_services),
+) -> dict[str, Any]:
+    try:
+        response = services.market_service.get_kline(
+            category=category,
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+        )
+        return _build_trend_analysis(
+            response=response,
+            symbol=symbol,
+            interval=interval,
+            side=side,
+        )
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
 @api.get("/api/positions")
 def positions(
     category: str = "linear",
@@ -170,6 +198,7 @@ def positions(
 def position_by_symbol(
     symbol: str,
     category: str = "linear",
+    side: str | None = None,
     _: None = Depends(require_api_auth),
     services: ServiceContainer = Depends(get_services),
 ) -> dict[str, Any]:
@@ -177,6 +206,7 @@ def position_by_symbol(
         position = services.position_service.get_position_by_symbol(
             category=category,
             symbol=symbol,
+            side=side,
         )
         if not position:
             raise HTTPException(status_code=404, detail="Position not found")
@@ -226,6 +256,7 @@ def rescue_plan(
         position = services.position_service.get_position_by_symbol(
             category=request.category,
             symbol=symbol,
+            side=request.side,
         )
         if not position or Decimal(str(position.get("size") or "0")) <= 0:
             raise HTTPException(status_code=404, detail="Active position not found")
@@ -256,6 +287,12 @@ def rescue_plan(
             "status": "calculation_only",
             "message": "Rescue Mode does not send orders in MVP.",
             "rescue_plan": plan,
+            "trend": _safe_trend_analysis(
+                services=services,
+                category=request.category,
+                symbol=symbol,
+                side=plan.side,
+            ),
         }
     except HTTPException:
         raise
@@ -281,6 +318,101 @@ def _available_balance_value(data: dict) -> str:
         or data.get("equity")
         or "0"
     )
+
+
+def _safe_trend_analysis(
+    services: ServiceContainer,
+    category: str,
+    symbol: str,
+    side: str | None,
+) -> dict[str, Any] | None:
+    try:
+        response = services.market_service.get_kline(
+            category=category,
+            symbol=symbol,
+            interval="15",
+            limit=120,
+        )
+        return _build_trend_analysis(
+            response=response,
+            symbol=symbol,
+            interval="15",
+            side=side,
+        )
+    except Exception:
+        return None
+
+
+def _build_trend_analysis(
+    response: dict,
+    symbol: str,
+    interval: str,
+    side: str | None = None,
+) -> dict[str, Any]:
+    raw_candles = response.get("result", {}).get("list", [])
+    candles = sorted(raw_candles, key=lambda item: int(item[0]))
+    closes = [Decimal(str(item[4])) for item in candles if len(item) >= 5]
+    if len(closes) < 5:
+        raise ValueError("Not enough candles for trend analysis")
+
+    first_close = closes[0]
+    last_close = closes[-1]
+    move_percent = (last_close - first_close) / first_close * Decimal("100")
+    short_window = closes[-20:] if len(closes) >= 20 else closes
+    long_window = closes[-60:] if len(closes) >= 60 else closes
+    short_ma = sum(short_window) / Decimal(len(short_window))
+    long_ma = sum(long_window) / Decimal(len(long_window))
+    ma_gap_percent = (short_ma - long_ma) / long_ma * Decimal("100")
+
+    if abs(move_percent) < Decimal("0.35") and abs(ma_gap_percent) < Decimal("0.15"):
+        direction = "sideways"
+    elif short_ma > long_ma and move_percent >= 0:
+        direction = "up"
+    elif short_ma < long_ma and move_percent <= 0:
+        direction = "down"
+    else:
+        direction = "mixed"
+
+    strength = min(
+        100,
+        int(abs(move_percent) * Decimal("8") + abs(ma_gap_percent) * Decimal("18")),
+    )
+    alignment = _trend_alignment(direction=direction, side=side)
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "direction": direction,
+        "strength": strength,
+        "move_percent": move_percent,
+        "short_ma": short_ma,
+        "long_ma": long_ma,
+        "alignment": alignment,
+        "summary": _trend_summary(direction=direction, side=side, alignment=alignment),
+    }
+
+
+def _trend_alignment(direction: str, side: str | None) -> str:
+    if direction in {"sideways", "mixed"} or side not in {"Buy", "Sell"}:
+        return "neutral"
+    if (side == "Buy" and direction == "up") or (side == "Sell" and direction == "down"):
+        return "with_position"
+    return "against_position"
+
+
+def _trend_summary(direction: str, side: str | None, alignment: str) -> str:
+    direction_text = {
+        "up": "краткосрочный тренд вверх",
+        "down": "краткосрочный тренд вниз",
+        "sideways": "рынок без явного направления",
+        "mixed": "смешанный сигнал",
+    }.get(direction, "тренд не определен")
+    if alignment == "with_position":
+        return f"{direction_text}; движение сейчас помогает позиции."
+    if alignment == "against_position":
+        if side == "Buy":
+            return f"{direction_text}; для лонга это риск, сначала снижай нагрузку."
+        return f"{direction_text}; для шорта это риск, сначала снижай нагрузку."
+    return f"{direction_text}; решение лучше принимать от риска, а не от импульса."
 
 
 def _http_error(exc: Exception) -> HTTPException:

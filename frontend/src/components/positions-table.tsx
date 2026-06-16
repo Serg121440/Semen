@@ -1,12 +1,21 @@
+import Link from "next/link";
+
 import { compact, money, riskClass, riskLabel, sideLabel } from "@/lib/format";
 import type { Position, RescuePlan } from "@/lib/types";
 
 type PositionsTableProps = {
   positions: Position[];
   rescue: RescuePlan | null;
+  selectedSymbol?: string;
+  selectedSide?: string;
 };
 
-export function PositionsTable({ positions, rescue }: PositionsTableProps) {
+export function PositionsTable({
+  positions,
+  rescue,
+  selectedSymbol,
+  selectedSide
+}: PositionsTableProps) {
   const active = positions.filter((position) => Number(position.size) > 0);
 
   if (active.length === 0) {
@@ -38,8 +47,10 @@ export function PositionsTable({ positions, rescue }: PositionsTableProps) {
           {active.map((position) => {
             const leverage = Number(position.leverage || 0);
             const pnl = Number(position.unrealisedPnl || 0);
+            const isSelected =
+              position.symbol === selectedSymbol && position.side === selectedSide;
             const level =
-              rescue && rescue.symbol === position.symbol
+              rescue && rescue.symbol === position.symbol && rescue.side === position.side
                 ? rescue.risk_level
                 : leverage >= 50
                   ? "high"
@@ -47,11 +58,20 @@ export function PositionsTable({ positions, rescue }: PositionsTableProps) {
 
             return (
               <tr
-                key={position.symbol}
-                className="rounded-lg bg-white/[0.035] text-silver-400"
+                key={`${position.symbol}-${position.side}`}
+                className={`rounded-lg text-silver-400 ${
+                  isSelected
+                    ? "bg-gold-500/10 outline outline-1 outline-gold-500/30"
+                    : "bg-white/[0.035]"
+                }`}
               >
                 <td className="rounded-l-lg px-3 py-3 font-semibold text-white">
-                  {position.symbol}
+                  <Link
+                    href={`/?symbol=${position.symbol}&side=${position.side}`}
+                    className="text-gold-300 transition hover:text-gold-200"
+                  >
+                    {position.symbol}
+                  </Link>
                 </td>
                 <td className="px-3 py-3">{sideLabel(position.side)}</td>
                 <td className="px-3 py-3">{compact(position.size)}</td>

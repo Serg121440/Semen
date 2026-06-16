@@ -1,4 +1,5 @@
 import type { RiskLevel } from "./types";
+import type { TrendAlignment, TrendDirection } from "./types";
 
 export function money(
   value: string | number | null | undefined,
@@ -109,4 +110,38 @@ export function translateWarning(warning: string): string {
     default:
       return warning;
   }
+}
+
+export function trendDirectionLabel(direction: TrendDirection | string): string {
+  switch (direction) {
+    case "up":
+      return "Вверх";
+    case "down":
+      return "Вниз";
+    case "sideways":
+      return "Боковик";
+    case "mixed":
+      return "Смешанный";
+    default:
+      return "-";
+  }
+}
+
+export function trendAlignmentLabel(alignment: TrendAlignment | string): string {
+  switch (alignment) {
+    case "with_position":
+      return "За позицию";
+    case "against_position":
+      return "Против позиции";
+    case "neutral":
+      return "Нейтрально";
+    default:
+      return "-";
+  }
+}
+
+export function trendTone(alignment: TrendAlignment | string): "green" | "red" | "gold" {
+  if (alignment === "with_position") return "green";
+  if (alignment === "against_position") return "red";
+  return "gold";
 }

@@ -12,17 +12,26 @@ import {
   riskClass,
   riskLabel,
   sideLabel,
+  trendAlignmentLabel,
+  trendDirectionLabel,
+  trendTone,
   translateWarning
 } from "@/lib/format";
 import { loadDashboard } from "@/lib/api";
 
-export default async function DashboardPage() {
-  const symbol = "BTCUSDT";
-  const data = await loadDashboard(symbol);
+type DashboardPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const params = (await searchParams) ?? {};
+  const requestedSymbol = firstParam(params.symbol) ?? "BTCUSDT";
+  const requestedSide = firstParam(params.side);
+  const data = await loadDashboard(requestedSymbol, requestedSide);
   const rescue = data.rescue?.rescue_plan ?? null;
-  const activePosition = data.positions.positions.find(
-    (position) => position.symbol === symbol && Number(position.size) > 0
-  );
+  const activePosition = data.selectedPosition;
+  const symbol = activePosition?.symbol ?? data.market.symbol;
+  const asset = symbol.replace(/USDT$/, "");
   const totalPnl = data.positions.positions.reduce(
     (sum, position) => sum + Number(position.unrealisedPnl || 0),
     0
@@ -42,7 +51,7 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/rescue"
+            href={`/rescue?symbol=${symbol}${activePosition?.side ? `&side=${activePosition.side}` : ""}`}
             className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
           >
             Режим спасения
@@ -106,7 +115,7 @@ export default async function DashboardPage() {
                 value={sideLabel(activePosition.side)}
                 tone="gold"
               />
-              <Metric label="Размер" value={`${compact(activePosition.size)} BTC`} />
+              <Metric label="Размер" value={`${compact(activePosition.size)} ${asset}`} />
               <Metric label="Плечо" value={`${activePosition.leverage}x`} tone="red" />
               <Metric label="Вход" value={money(activePosition.avgPrice)} />
               <Metric label="Mark" value={money(activePosition.markPrice)} />
@@ -117,7 +126,7 @@ export default async function DashboardPage() {
               />
             </div>
           ) : (
-            <div className="text-sm text-silver-500">Активной позиции BTCUSDT нет.</div>
+            <div className="text-sm text-silver-500">Активных позиций нет.</div>
           )}
         </Card>
 
@@ -146,11 +155,40 @@ export default async function DashboardPage() {
         <PositionsTable
           positions={data.positions.positions}
           rescue={rescue}
+          selectedSymbol={activePosition?.symbol}
+          selectedSide={activePosition?.side}
         />
       </Card>
 
       {rescue ? (
         <section className="grid gap-4 xl:grid-cols-2">
+          <Card title="Анализ тренда">
+            {data.trend ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                <Metric
+                  label="Направление"
+                  value={trendDirectionLabel(data.trend.direction)}
+                  tone={trendTone(data.trend.alignment)}
+                />
+                <Metric
+                  label="Сила"
+                  value={`${data.trend.strength}/100`}
+                  tone={trendTone(data.trend.alignment)}
+                />
+                <Metric
+                  label="К позиции"
+                  value={trendAlignmentLabel(data.trend.alignment)}
+                  tone={trendTone(data.trend.alignment)}
+                />
+                <div className="md:col-span-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-silver-400">
+                  {data.trend.summary}
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-silver-500">Тренд пока не рассчитан.</div>
+            )}
+          </Card>
+
           <Card title="Режим спасения">
             <div className="grid gap-4 md:grid-cols-2">
               <Metric label="До безубытка" value={money(rescue.distance_to_breakeven)} tone="gold" />
@@ -240,6 +278,10 @@ export default async function DashboardPage() {
       </footer>
     </main>
   );
+}
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function ScenarioRow({

@@ -5,14 +5,26 @@ import { Card } from "@/components/card";
 import { Metric } from "@/components/metric";
 import { RescuePlanner } from "@/components/rescue-planner";
 import { StatusPill } from "@/components/status-pill";
-import { money, riskClass, riskLabel, sideLabel } from "@/lib/format";
+import {
+  money,
+  riskClass,
+  riskLabel,
+  sideLabel
+} from "@/lib/format";
 import { loadRescue } from "@/lib/api";
 
-export default async function RescuePage() {
-  const symbol = "BTCUSDT";
-  const response = await loadRescue(symbol);
+type RescuePageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function RescuePage({ searchParams }: RescuePageProps) {
+  const params = (await searchParams) ?? {};
+  const symbol = firstParam(params.symbol) ?? "BTCUSDT";
+  const requestedSide = firstParam(params.side);
+  const response = await loadRescue(symbol, undefined, requestedSide);
   const plan = response.rescue_plan;
   const side = sideLabel(plan.side);
+  const asset = symbol.replace(/USDT$/, "");
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
@@ -41,7 +53,7 @@ export default async function RescuePage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card title="Позиция">
-          <Metric label="Объем" value={`${plan.qty} BTC`} tone="gold" />
+          <Metric label="Объем" value={`${plan.qty} ${asset}`} tone="gold" />
           <div className="mt-4 text-sm text-silver-500">
             плечо {plan.leverage ?? "-"}x
           </div>
@@ -73,11 +85,15 @@ export default async function RescuePage() {
         </Card>
       </section>
 
-      <RescuePlanner initialPlan={plan} symbol={symbol} />
+      <RescuePlanner initialPlan={plan} symbol={symbol} side={plan.side} initialTrend={response.trend} />
 
       <footer className="border-t border-white/10 py-5 text-xs text-silver-500">
         Режим спасения в этом MVP только считает план. Тестовые ордера на Testnet подключим позже.
       </footer>
     </main>
   );
+}
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 
 from app.bybit_client import ensure_success
@@ -32,11 +33,24 @@ class PositionService:
         )
         return ensure_success(self.session.get_positions(**params), "get_positions")
 
-    def get_position_by_symbol(self, category: str, symbol: str) -> dict | None:
+    def get_position_by_symbol(
+        self,
+        category: str,
+        symbol: str,
+        side: str | None = None,
+    ) -> dict | None:
         response = self.get_positions(category=category, symbol=symbol)
         positions = response.get("result", {}).get("list", [])
         for position in positions:
-            if position.get("symbol") == symbol:
+            if position.get("symbol") != symbol:
+                continue
+            if side and position.get("side") != side:
+                continue
+            if Decimal(str(position.get("size") or "0")) <= 0:
+                continue
+            return position
+        for position in positions:
+            if position.get("symbol") == symbol and (not side or position.get("side") == side):
                 return position
         return None
 

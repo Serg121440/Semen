@@ -30,6 +30,21 @@ export type MarketResponse = {
   };
 };
 
+export type TrendDirection = "up" | "down" | "sideways" | "mixed";
+export type TrendAlignment = "with_position" | "against_position" | "neutral";
+
+export type TrendResponse = {
+  symbol: string;
+  interval: string;
+  direction: TrendDirection;
+  strength: number;
+  move_percent: string;
+  short_ma: string;
+  long_ma: string;
+  alignment: TrendAlignment;
+  summary: string;
+};
+
 export type Position = {
   symbol: string;
   side: "Buy" | "Sell" | "";
@@ -96,6 +111,7 @@ export type RescueResponse = {
   status: string;
   message: string;
   rescue_plan: RescuePlan;
+  trend: TrendResponse | null;
 };
 
 export type DashboardData = {
@@ -104,4 +120,6 @@ export type DashboardData = {
   market: MarketResponse;
   positions: PositionsResponse;
   rescue: RescueResponse | null;
+  selectedPosition: Position | null;
+  trend: TrendResponse | null;
 };

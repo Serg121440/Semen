@@ -36,6 +36,22 @@ class FakeMarketService:
     def get_last_price(self, category: str, symbol: str) -> Decimal:
         return Decimal("100")
 
+    def get_kline(
+        self,
+        category: str,
+        symbol: str,
+        interval: str = "15",
+        limit: int = 120,
+    ):
+        return {
+            "result": {
+                "list": [
+                    [str(index), "100", "101", "99", str(100 + index), "1", "1"]
+                    for index in range(1, 11)
+                ]
+            }
+        }
+
     def get_instrument_rules(self, category: str, symbol: str) -> InstrumentRules:
         return InstrumentRules(
             symbol=symbol,
@@ -56,13 +72,18 @@ class FakePositionService:
     ):
         return {"result": {"list": [self.get_position_by_symbol(category, "BTCUSDT")]}}
 
-    def get_position_by_symbol(self, category: str, symbol: str):
+    def get_position_by_symbol(
+        self,
+        category: str,
+        symbol: str,
+        side: str | None = None,
+    ):
         return {
             "symbol": symbol,
-            "side": "Buy",
+            "side": side or "Buy",
             "size": "1",
             "avgPrice": "100",
-            "markPrice": "90",
+            "markPrice": "90" if side != "Sell" else "110",
             "leverage": "100",
             "liqPrice": "80",
             "positionValue": "90",
@@ -163,3 +184,12 @@ def test_rescue_endpoint_is_calculation_only(client) -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "calculation_only"
     assert response.json()["rescue_plan"]["risk_score"] >= 30
+    assert response.json()["trend"]["direction"] == "up"
+
+
+def test_rescue_endpoint_can_select_short_side(client) -> None:
+    response = client.post("/api/rescue/BTCUSDT", json={"side": "Sell"})
+
+    assert response.status_code == 200
+    assert response.json()["rescue_plan"]["side"] == "Sell"
+    assert response.json()["trend"]["alignment"] == "against_position"

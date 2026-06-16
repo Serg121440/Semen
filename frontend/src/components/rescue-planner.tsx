@@ -12,18 +12,29 @@ import {
   riskClass,
   riskLabel,
   targetAverageLabel,
+  trendAlignmentLabel,
+  trendDirectionLabel,
+  trendTone,
   translateStatus,
   translateWarning
 } from "@/lib/format";
-import type { RescuePlan, RescueResponse } from "@/lib/types";
+import type { RescuePlan, RescueResponse, TrendResponse } from "@/lib/types";
 
 type RescuePlannerProps = {
   initialPlan: RescuePlan;
   symbol: string;
+  side?: string;
+  initialTrend?: TrendResponse | null;
 };
 
-export function RescuePlanner({ initialPlan, symbol }: RescuePlannerProps) {
+export function RescuePlanner({
+  initialPlan,
+  symbol,
+  side,
+  initialTrend = null
+}: RescuePlannerProps) {
   const [plan, setPlan] = useState(initialPlan);
+  const [trend, setTrend] = useState(initialTrend);
   const [targetAvg, setTargetAvg] = useState("");
   const [status, setStatus] = useState("Режим только расчетный. Ордер отправить нельзя.");
   const [isPending, startTransition] = useTransition();
@@ -35,6 +46,7 @@ export function RescuePlanner({ initialPlan, symbol }: RescuePlannerProps) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            side: side || plan.side || null,
             target_avg: nextTargetAvg || null
           })
         });
@@ -43,6 +55,7 @@ export function RescuePlanner({ initialPlan, symbol }: RescuePlannerProps) {
         }
         const payload = (await response.json()) as RescueResponse;
         setPlan(payload.rescue_plan);
+        setTrend(payload.trend ?? null);
         setStatus(translateStatus(payload.message));
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Не удалось обновить план.");
@@ -120,6 +133,36 @@ export function RescuePlanner({ initialPlan, symbol }: RescuePlannerProps) {
             {isPending ? "Считаю..." : status}
           </span>
         </div>
+      </Card>
+
+      <Card title="Тренд перед решением">
+        {trend ? (
+          <div className="grid gap-4 md:grid-cols-4">
+            <Metric
+              label="Направление"
+              value={trendDirectionLabel(trend.direction)}
+              tone={trendTone(trend.alignment)}
+            />
+            <Metric
+              label="Сила"
+              value={`${trend.strength}/100`}
+              tone={trendTone(trend.alignment)}
+            />
+            <Metric
+              label="К позиции"
+              value={trendAlignmentLabel(trend.alignment)}
+              tone={trendTone(trend.alignment)}
+            />
+            <Metric label="Движение" value={`${money(trend.move_percent)}%`} />
+            <div className="md:col-span-4 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-silver-400">
+              {trend.summary}
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-silver-500">
+            Тренд пока не рассчитан. Обнови данные перед решением.
+          </div>
+        )}
       </Card>
 
       <section className="grid gap-4 xl:grid-cols-2">

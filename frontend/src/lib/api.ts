@@ -4,7 +4,8 @@ import type {
   HealthResponse,
   MarketResponse,
   PositionsResponse,
-  RescueResponse
+  RescueResponse,
+  TrendResponse
 } from "./types";
 import "./tls";
 
@@ -30,36 +31,49 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function loadDashboard(symbol = "BTCUSDT"): Promise<DashboardData> {
-  const [health, balance, market, positions] = await Promise.all([
+export async function loadDashboard(
+  symbol = "BTCUSDT",
+  side?: string
+): Promise<DashboardData> {
+  const [health, balance, positions] = await Promise.all([
     request<HealthResponse>("/api/health"),
     request<BalanceResponse>("/api/account/balance"),
-    request<MarketResponse>(`/api/market/${symbol}`),
     request<PositionsResponse>("/api/positions")
   ]);
 
+  const activePositions = positions.positions.filter((position) => Number(position.size) > 0);
+  const selectedPosition =
+    activePositions.find(
+      (position) => position.symbol === symbol && (!side || position.side === side)
+    ) ??
+    activePositions[0] ??
+    null;
+  const selectedSymbol = selectedPosition?.symbol ?? symbol;
+  const selectedSide = selectedPosition?.side;
+  const market = await request<MarketResponse>(`/api/market/${selectedSymbol}`);
   let rescue: RescueResponse | null = null;
-  const active = positions.positions.find(
-    (position) => position.symbol === symbol && Number(position.size) > 0
-  );
+  let trend: TrendResponse | null = null;
 
-  if (active) {
-    rescue = await request<RescueResponse>(`/api/rescue/${symbol}`, {
+  if (selectedPosition) {
+    rescue = await request<RescueResponse>(`/api/rescue/${selectedSymbol}`, {
       method: "POST",
-      body: JSON.stringify({})
+      body: JSON.stringify({ side: selectedSide })
     });
+    trend = rescue.trend;
   }
 
-  return { health, balance, market, positions, rescue };
+  return { health, balance, market, positions, rescue, selectedPosition, trend };
 }
 
 export async function loadRescue(
   symbol = "BTCUSDT",
-  targetAvg?: string
+  targetAvg?: string,
+  side?: string
 ): Promise<RescueResponse> {
   return request<RescueResponse>(`/api/rescue/${symbol}`, {
     method: "POST",
     body: JSON.stringify({
+      side: side || null,
       target_avg: targetAvg ? targetAvg : null
     })
   });
