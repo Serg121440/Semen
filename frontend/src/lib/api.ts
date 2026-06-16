@@ -49,3 +49,15 @@ export async function loadDashboard(symbol = "BTCUSDT"): Promise<DashboardData> 
 
   return { health, balance, market, positions, rescue };
 }
+
+export async function loadRescue(
+  symbol = "BTCUSDT",
+  targetAvg?: string
+): Promise<RescueResponse> {
+  return request<RescueResponse>(`/api/rescue/${symbol}`, {
+    method: "POST",
+    body: JSON.stringify({
+      target_avg: targetAvg ? targetAvg : null
+    })
+  });
+}

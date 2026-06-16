@@ -1,4 +1,5 @@
 import { RefreshCcw, ShieldAlert, TrendingUp } from "lucide-react";
+import Link from "next/link";
 
 import { Card } from "@/components/card";
 import { Metric } from "@/components/metric";
@@ -32,6 +33,12 @@ export default async function DashboardPage() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/rescue"
+            className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
+          >
+            Rescue Mode
+          </Link>
           <StatusPill label={data.health.dry_run ? "DRY RUN" : "LIVE"} level="medium" />
           <StatusPill label={data.health.testnet ? "TESTNET" : "MAINNET"} level="high" />
           <StatusPill label={data.health.live_trading ? "LIVE TRADING" : "NO ORDERS"} />

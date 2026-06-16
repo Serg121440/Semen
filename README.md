@@ -132,6 +132,16 @@ npm run dev
 The frontend is calculation-only: it has no order submission buttons and never
 stores API keys or secrets in the browser.
 
+Routes:
+
+```text
+/         Dashboard
+/rescue   Rescue Mode
+```
+
+`/rescue` shows the full Rescue Plan, scenarios A/B/C/D, target average
+calculation, copy-plan action, and refresh action. It remains calculation-only.
+
 ## Quality Checks
 
 ```bash
