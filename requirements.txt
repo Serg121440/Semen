@@ -1,5 +1,5 @@
 pybit
-python - dotenv
+python-dotenv
 pydantic
 pytest
 ruff

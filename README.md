@@ -168,6 +168,22 @@ BACKEND_API_BASE_URL=https://your-backend-domain
 BACKEND_API_TOKEN=<same-long-random-token>
 ```
 
+Relax Dev settings:
+
+```text
+Backend project:
+Root directory: /
+Stack: Python Web / FastAPI
+Build command: pip install -r requirements.txt
+Start command: uvicorn app.web_api:api --host 0.0.0.0 --port $PORT
+
+Frontend project:
+Root directory: frontend
+Stack: Next.js
+Build command: npm install && npm run build
+Start command: npm run start -- -p $PORT
+```
+
 ## Quality Checks
 
 ```bash
