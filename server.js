@@ -2,14 +2,14 @@ const { existsSync } = require("node:fs");
 const { join } = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const rootDir = __dirname;
-const frontendDir = join(rootDir, "frontend");
-const buildIdPath = join(frontendDir, ".next", "BUILD_ID");
+const appDir = __dirname;
+const standaloneServer = join(appDir, ".next", "standalone", "server.js");
+const buildIdPath = join(appDir, ".next", "BUILD_ID");
 const port = process.env.PORT || "3000";
 
 function run(command, args) {
   const result = spawnSync(command, args, {
-    cwd: rootDir,
+    cwd: appDir,
     env: process.env,
     stdio: "inherit"
   });
@@ -19,12 +19,16 @@ function run(command, args) {
   }
 }
 
-if (!existsSync(join(frontendDir, "node_modules"))) {
-  run("npm", ["--prefix", "frontend", "install"]);
+if (!existsSync(join(appDir, "node_modules"))) {
+  run("npm", ["install"]);
 }
 
 if (!existsSync(buildIdPath)) {
-  run("npm", ["--prefix", "frontend", "run", "build"]);
+  run("npm", ["run", "build"]);
 }
 
-run("npm", ["--prefix", "frontend", "run", "start", "--", "-H", "0.0.0.0", "-p", port]);
+if (existsSync(standaloneServer)) {
+  run("node", [standaloneServer]);
+} else {
+  run("npm", ["run", "start", "--", "-H", "0.0.0.0", "-p", port]);
+}
