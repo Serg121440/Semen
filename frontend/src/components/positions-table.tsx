@@ -1,4 +1,4 @@
-import { compact, money, riskClass } from "@/lib/format";
+import { compact, money, riskClass, riskLabel, sideLabel } from "@/lib/format";
 import type { Position, RescuePlan } from "@/lib/types";
 
 type PositionsTableProps = {
@@ -12,7 +12,7 @@ export function PositionsTable({ positions, rescue }: PositionsTableProps) {
   if (active.length === 0) {
     return (
       <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-silver-500">
-        No open positions.
+        Открытых позиций нет.
       </div>
     );
   }
@@ -22,16 +22,16 @@ export function PositionsTable({ positions, rescue }: PositionsTableProps) {
       <table className="w-full min-w-[920px] border-separate border-spacing-y-2 text-sm">
         <thead className="text-left text-xs uppercase tracking-[0.14em] text-silver-500">
           <tr>
-            <th className="px-3 py-2">Symbol</th>
-            <th className="px-3 py-2">Side</th>
-            <th className="px-3 py-2">Size</th>
-            <th className="px-3 py-2">Avg Entry</th>
+            <th className="px-3 py-2">Символ</th>
+            <th className="px-3 py-2">Сторона</th>
+            <th className="px-3 py-2">Размер</th>
+            <th className="px-3 py-2">Средняя</th>
             <th className="px-3 py-2">Mark</th>
-            <th className="px-3 py-2">Liq</th>
-            <th className="px-3 py-2">Lev</th>
+            <th className="px-3 py-2">Ликв.</th>
+            <th className="px-3 py-2">Плечо</th>
             <th className="px-3 py-2">uPnL</th>
             <th className="px-3 py-2">TP / SL</th>
-            <th className="px-3 py-2">Risk</th>
+            <th className="px-3 py-2">Риск</th>
           </tr>
         </thead>
         <tbody>
@@ -53,7 +53,7 @@ export function PositionsTable({ positions, rescue }: PositionsTableProps) {
                 <td className="rounded-l-lg px-3 py-3 font-semibold text-white">
                   {position.symbol}
                 </td>
-                <td className="px-3 py-3">{position.side === "Buy" ? "Long" : "Short"}</td>
+                <td className="px-3 py-3">{sideLabel(position.side)}</td>
                 <td className="px-3 py-3">{compact(position.size)}</td>
                 <td className="px-3 py-3">{money(position.avgPrice)}</td>
                 <td className="px-3 py-3">{money(position.markPrice)}</td>
@@ -69,7 +69,7 @@ export function PositionsTable({ positions, rescue }: PositionsTableProps) {
                 </td>
                 <td className="rounded-r-lg px-3 py-3">
                   <span className={`rounded-full border px-2 py-1 text-xs ${riskClass(level)}`}>
-                    {String(level).toUpperCase()}
+                    {riskLabel(level)}
                   </span>
                 </td>
               </tr>
