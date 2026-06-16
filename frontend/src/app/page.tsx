@@ -19,6 +19,7 @@ import {
   translateWarning
 } from "@/lib/format";
 import { loadDashboard } from "@/lib/api";
+import type { Position } from "@/lib/types";
 
 type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -28,11 +29,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const params = (await searchParams) ?? {};
   const requestedSymbol = firstParam(params.symbol) ?? "BTCUSDT";
   const requestedSide = firstParam(params.side);
+  const view = normalizeView(firstParam(params.view));
   const data = await loadDashboard(requestedSymbol, requestedSide);
   const rescue = data.rescue?.rescue_plan ?? null;
   const activePosition = data.selectedPosition;
   const symbol = activePosition?.symbol ?? data.market.symbol;
   const asset = symbol.replace(/USDT$/, "");
+  const selectedSide = activePosition?.side;
+  const activePositions = data.positions.positions.filter(
+    (position) => Number(position.size) > 0
+  );
   const totalPnl = data.positions.positions.reduce(
     (sum, position) => sum + Number(position.unrealisedPnl || 0),
     0
@@ -52,7 +58,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href={`/rescue?symbol=${symbol}${activePosition?.side ? `&side=${activePosition.side}` : ""}`}
+            href={`/rescue?symbol=${symbol}${selectedSide ? `&side=${selectedSide}` : ""}`}
             className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
           >
             Режим спасения
@@ -62,6 +68,27 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <StatusPill label={data.health.live_trading ? "ТОРГОВЛЯ ВКЛ." : "БЕЗ ОРДЕРОВ"} />
         </div>
       </header>
+
+      <nav className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+        {[
+          ["overview", "Обзор"],
+          ["positions", "Позиции"],
+          ["rescue", "Rescue"],
+          ["analysis", "Теханализ"]
+        ].map(([key, label]) => (
+          <Link
+            key={key}
+            href={dashboardHref(symbol, selectedSide, key)}
+            className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+              view === key
+                ? "bg-gold-500/15 text-gold-300"
+                : "text-silver-500 hover:bg-white/[0.04] hover:text-silver-300"
+            }`}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card title="Баланс USDT">
@@ -107,63 +134,59 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card title="Текущая позиция">
-          {activePosition ? (
-            <div className="grid gap-4 md:grid-cols-3">
-              <Metric
-                label="Сторона"
-                value={sideLabel(activePosition.side)}
-                tone="gold"
-              />
-              <Metric label="Размер" value={`${compact(activePosition.size)} ${asset}`} />
-              <Metric label="Плечо" value={`${activePosition.leverage}x`} tone="red" />
-              <Metric label="Вход" value={money(activePosition.avgPrice)} />
-              <Metric label="Mark" value={money(activePosition.markPrice)} />
-              <Metric
-                label="Ликвидация"
-                value={money(activePosition.liqPrice ?? activePosition.liquidationPrice)}
-                tone="red"
-              />
-            </div>
-          ) : (
-            <div className="text-sm text-silver-500">Активных позиций нет.</div>
-          )}
-        </Card>
+      <PositionSwitcher
+        positions={activePositions}
+        selectedSymbol={activePosition?.symbol}
+        selectedSide={selectedSide}
+        view={view}
+      />
 
-        <Card title="Предупреждения">
-          <div className="space-y-3">
-            {rescue?.warnings?.length ? (
-              rescue.warnings.map((warning) => (
-                <div
-                  key={warning}
-                  className="flex gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200"
-                >
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{translateWarning(warning)}</span>
-                </div>
-              ))
-            ) : (
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-silver-500">
-                Критических предупреждений нет.
+      {view === "overview" ? (
+        <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card title="Текущая позиция">
+            {activePosition ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                <Metric
+                  label="Сторона"
+                  value={sideLabel(activePosition.side)}
+                  tone="gold"
+                />
+                <Metric label="Размер" value={`${compact(activePosition.size)} ${asset}`} />
+                <Metric label="Плечо" value={`${activePosition.leverage}x`} tone="red" />
+                <Metric label="Вход" value={money(activePosition.avgPrice)} />
+                <Metric label="Mark" value={money(activePosition.markPrice)} />
+                <Metric
+                  label="Ликвидация"
+                  value={money(activePosition.liqPrice ?? activePosition.liquidationPrice)}
+                  tone="red"
+                />
               </div>
+            ) : (
+              <div className="text-sm text-silver-500">Активных позиций нет.</div>
             )}
-          </div>
+          </Card>
+
+          <WarningsCard warnings={rescue?.warnings ?? []} />
+        </section>
+      ) : null}
+
+      {view === "positions" ? (
+        <Card title="Позиции">
+          <PositionsTable
+            positions={data.positions.positions}
+            rescue={rescue}
+            selectedSymbol={activePosition?.symbol}
+            selectedSide={selectedSide}
+            view={view}
+          />
         </Card>
-      </section>
+      ) : null}
 
-      <Card title="Позиции">
-        <PositionsTable
-          positions={data.positions.positions}
-          rescue={rescue}
-          selectedSymbol={activePosition?.symbol}
-          selectedSide={activePosition?.side}
-        />
-      </Card>
+      {view === "analysis" ? (
+        <MarketAnalysis analysis={data.marketAnalysis} />
+      ) : null}
 
-      <MarketAnalysis analysis={data.marketAnalysis} />
-
-      {rescue ? (
+      {view === "rescue" && rescue ? (
         <section className="grid gap-4 xl:grid-cols-2">
           <Card title="Анализ тренда">
             {data.trend ? (
@@ -285,6 +308,105 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeView(value: string | undefined): string {
+  if (["overview", "positions", "rescue", "analysis"].includes(value ?? "")) {
+    return value as string;
+  }
+  return "overview";
+}
+
+function dashboardHref(
+  symbol: string | undefined,
+  side: string | undefined,
+  view: string
+): string {
+  const params = new URLSearchParams();
+  if (symbol) params.set("symbol", symbol);
+  if (side) params.set("side", side);
+  params.set("view", view);
+  return `/?${params.toString()}`;
+}
+
+function PositionSwitcher({
+  positions,
+  selectedSymbol,
+  selectedSide,
+  view
+}: {
+  positions: Position[];
+  selectedSymbol?: string;
+  selectedSide?: string;
+  view: string;
+}) {
+  if (!positions.length) return null;
+
+  return (
+    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {positions.map((position) => {
+        const isSelected =
+          position.symbol === selectedSymbol && position.side === selectedSide;
+        const pnl = Number(position.unrealisedPnl || 0);
+        return (
+          <Link
+            key={`${position.symbol}-${position.side}`}
+            href={dashboardHref(position.symbol, position.side, view)}
+            className={`rounded-lg border p-4 transition ${
+              isSelected
+                ? "border-gold-500/40 bg-gold-500/10 shadow-gold-soft"
+                : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-semibold text-white">{position.symbol}</div>
+              <div className="text-sm text-gold-300">{sideLabel(position.side)}</div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+              <div>
+                <div className="text-xs uppercase tracking-[0.14em] text-silver-500">Размер</div>
+                <div className="mt-1 text-silver-300">{compact(position.size)}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.14em] text-silver-500">Плечо</div>
+                <div className="mt-1 text-red-300">{position.leverage}x</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-[0.14em] text-silver-500">PnL</div>
+                <div className={`mt-1 ${pnl < 0 ? "text-red-300" : "text-emerald-300"}`}>
+                  {money(position.unrealisedPnl)}
+                </div>
+              </div>
+            </div>
+          </Link>
+        );
+      })}
+    </section>
+  );
+}
+
+function WarningsCard({ warnings }: { warnings: string[] }) {
+  return (
+    <Card title="Предупреждения">
+      <div className="space-y-3">
+        {warnings.length ? (
+          warnings.map((warning) => (
+            <div
+              key={warning}
+              className="flex gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200"
+            >
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{translateWarning(warning)}</span>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-silver-500">
+            Критических предупреждений нет.
+          </div>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 function ScenarioRow({

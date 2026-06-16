@@ -8,13 +8,15 @@ type PositionsTableProps = {
   rescue: RescuePlan | null;
   selectedSymbol?: string;
   selectedSide?: string;
+  view?: string;
 };
 
 export function PositionsTable({
   positions,
   rescue,
   selectedSymbol,
-  selectedSide
+  selectedSide,
+  view = "positions"
 }: PositionsTableProps) {
   const active = positions.filter((position) => Number(position.size) > 0);
 
@@ -67,7 +69,7 @@ export function PositionsTable({
               >
                 <td className="rounded-l-lg px-3 py-3 font-semibold text-white">
                   <Link
-                    href={`/?symbol=${position.symbol}&side=${position.side}`}
+                    href={`/?symbol=${position.symbol}&side=${position.side}&view=${view}`}
                     className="text-gold-300 transition hover:text-gold-200"
                   >
                     {position.symbol}
