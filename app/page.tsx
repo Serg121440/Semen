@@ -47,30 +47,47 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const riskLevel = rescue?.risk_level ?? "low";
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
-      <header className="flex flex-col gap-4 border-b border-white/10 pb-6 md:flex-row md:items-end md:justify-between">
-        <div>
+    <main className="dashboard-shell mx-auto flex min-h-screen w-full max-w-[1480px] flex-col gap-5 px-5 py-5 lg:px-7">
+      <header className="dashboard-header flex flex-col gap-4 rounded-lg border border-white/10 bg-graphite-850/85 p-4 shadow-gold-soft backdrop-blur md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
           <div className="text-xs font-semibold uppercase tracking-[0.28em] text-gold-400">
             Bybit Trading Core
           </div>
-          <h1 className="mt-3 text-3xl font-semibold text-white md:text-5xl">
+          <h1 className="mt-2 text-3xl font-semibold text-white md:text-4xl">
             Панель управления
           </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-silver-500">
+            <span>{symbol}</span>
+            {selectedSide ? <span>{sideLabel(selectedSide)}</span> : null}
+            <span>{money(data.market.current_price)} USDT</span>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/rescue?symbol=${symbol}${selectedSide ? `&side=${selectedSide}` : ""}`}
-            className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
-          >
-            Режим спасения
-          </Link>
-          <StatusPill label={data.health.dry_run ? "DRY RUN" : "LIVE"} level="medium" />
-          <StatusPill label={data.health.testnet ? "TESTNET" : "MAINNET"} level="high" />
-          <StatusPill label={data.health.live_trading ? "ТОРГОВЛЯ ВКЛ." : "БЕЗ ОРДЕРОВ"} />
+        <div className="flex min-w-0 flex-col gap-3 xl:min-w-[620px]">
+          <div className="dashboard-header-stats grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <HeaderStat label="Кошелек" value={`${money(data.balance.wallet_balance)} USDT`} />
+            <HeaderStat
+              label="PnL"
+              value={`${money(totalPnl)} USDT`}
+              tone={totalPnl < 0 ? "red" : "green"}
+            />
+            <HeaderStat label="Риск" value={`${rescue?.risk_score ?? 0}/100`} tone="gold" />
+            <HeaderStat label="Позиции" value={String(activePositions.length)} />
+          </div>
+          <div className="flex flex-wrap justify-start gap-2 md:justify-end">
+            <Link
+              href={`/rescue?symbol=${symbol}${selectedSide ? `&side=${selectedSide}` : ""}`}
+              className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
+            >
+              Режим спасения
+            </Link>
+            <StatusPill label={data.health.dry_run ? "DRY RUN" : "LIVE"} level="medium" />
+            <StatusPill label={data.health.testnet ? "TESTNET" : "MAINNET"} level="high" />
+            <StatusPill label={data.health.live_trading ? "ТОРГОВЛЯ ВКЛ." : "БЕЗ ОРДЕРОВ"} />
+          </div>
         </div>
       </header>
 
-      <nav className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+      <nav className="dashboard-nav flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
         {[
           ["overview", "Обзор"],
           ["positions", "Позиции"],
@@ -91,7 +108,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         ))}
       </nav>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card title="Баланс USDT">
           <Metric label="Кошелек" value={`${money(data.balance.wallet_balance)} USDT`} tone="gold" />
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-silver-500">
@@ -145,7 +162,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       <ScenarioDashboard />
 
       {view === "overview" ? (
-        <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="dashboard-content-grid grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <Card title="Текущая позиция">
             {activePosition ? (
               <div className="grid gap-4 md:grid-cols-3">
@@ -190,7 +207,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ) : null}
 
       {view === "rescue" && rescue ? (
-        <section className="grid gap-4 xl:grid-cols-2">
+        <section className="dashboard-content-grid grid gap-4 xl:grid-cols-2">
           <Card title="Анализ тренда">
             {data.trend ? (
               <div className="grid gap-4 md:grid-cols-3">
@@ -332,6 +349,34 @@ function dashboardHref(
   return `/?${params.toString()}`;
 }
 
+function HeaderStat({
+  label,
+  value,
+  tone = "default"
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "green" | "red" | "gold";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "text-emerald-300"
+      : tone === "red"
+        ? "text-red-300"
+        : tone === "gold"
+          ? "text-gold-300"
+          : "text-white";
+
+  return (
+    <div className="dashboard-stat-chip rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+        {label}
+      </div>
+      <div className={`mt-1 truncate text-sm font-semibold ${toneClass}`}>{value}</div>
+    </div>
+  );
+}
+
 function PositionSwitcher({
   positions,
   selectedSymbol,
@@ -346,7 +391,7 @@ function PositionSwitcher({
   if (!positions.length) return null;
 
   return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <section className="dashboard-positions grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       {positions.map((position) => {
         const isSelected =
           position.symbol === selectedSymbol && position.side === selectedSide;

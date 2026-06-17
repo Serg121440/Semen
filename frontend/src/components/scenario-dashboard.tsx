@@ -131,14 +131,16 @@ export function ScenarioDashboard() {
   );
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-      <div className="rounded-lg border border-white/10 bg-graphite-850/80 p-4 shadow-gold-soft">
-        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <section className="scenario-dashboard grid gap-4 xl:grid-cols-[1.42fr_0.58fr]">
+      <div className="scenario-chart-card rounded-lg border border-white/10 bg-graphite-850/80 p-4 shadow-gold-soft">
+        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-400">
               Быстрый сценарный график
             </div>
-            <h2 className="mt-1 text-2xl font-semibold text-white">{data.title} / TetherUS</h2>
+            <h2 className="mt-1 text-2xl font-semibold text-white md:text-[28px]">
+              {data.title} / TetherUS
+            </h2>
           </div>
           <div className="grid grid-cols-2 gap-2 rounded-lg border border-white/10 bg-black/20 p-1">
             {(["BTC", "ETH"] as SymbolKey[]).map((item) => (
@@ -158,33 +160,33 @@ export function ScenarioDashboard() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="scenario-quick grid gap-3 md:grid-cols-3">
           <QuickMetric icon={<Gauge className="h-4 w-4" />} label="Ключевой уровень" value={data.keyLevel} />
           <QuickMetric icon={<ArrowUp className="h-4 w-4" />} label="Выше" value={data.upPath} tone="green" />
           <QuickMetric icon={<ArrowDown className="h-4 w-4" />} label="Ниже" value={data.downPath} tone="red" />
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-lg border border-white/10 bg-[#09090b]">
+        <div className="scenario-chart-frame mt-3 overflow-hidden rounded-lg border border-white/10 bg-[#09090b]">
           <ScenarioChart config={data} />
         </div>
       </div>
 
-      <div className="grid gap-4">
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4">
+      <div className="scenario-side grid gap-4">
+        <div className="scenario-card rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4">
           <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-emerald-300">
             <ArrowUp className="h-4 w-4" />
             Сценарий вверх
           </div>
           <p className="text-sm leading-6 text-silver-400">{data.bullish}</p>
         </div>
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
+        <div className="scenario-card rounded-lg border border-red-500/20 bg-red-500/10 p-4">
           <div className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-red-300">
             <ArrowDown className="h-4 w-4" />
             Сценарий вниз
           </div>
           <p className="text-sm leading-6 text-silver-400">{data.bearish}</p>
         </div>
-        <div className="rounded-lg border border-white/10 bg-graphite-850/80 p-4 shadow-gold-soft">
+        <div className="scenario-zones rounded-lg border border-white/10 bg-graphite-850/80 p-4 shadow-gold-soft">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-2 text-sm font-semibold text-white">
               <Layers3 className="h-4 w-4 text-gold-400" />
@@ -232,8 +234,8 @@ export function ScenarioDashboard() {
 
 function ScenarioChart({ config }: { config: ScenarioConfig }) {
   const width = 920;
-  const height = 430;
-  const pad = { top: 28, right: 84, bottom: 36, left: 44 };
+  const height = 370;
+  const pad = { top: 24, right: 84, bottom: 28, left: 44 };
   const [min, max] = config.range;
   const xStep = (width - pad.left - pad.right) / Math.max(config.candles.length - 1, 1);
   const y = (price: number) =>
@@ -257,7 +259,7 @@ function ScenarioChart({ config }: { config: ScenarioConfig }) {
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label={`${config.pair} сценарный график`}
-      className="block h-[360px] w-full md:h-[430px]"
+      className="block h-[300px] w-full md:h-[360px]"
     >
       <defs>
         <linearGradient id="chartFade" x1="0" x2="0" y1="0" y2="1">
