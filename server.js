@@ -3,7 +3,6 @@ const { join } = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const appDir = __dirname;
-const standaloneServer = join(appDir, ".next", "standalone", "server.js");
 const buildIdPath = join(appDir, ".next", "BUILD_ID");
 const port = process.env.PORT || "3000";
 
@@ -27,8 +26,4 @@ if (!existsSync(buildIdPath)) {
   run("npm", ["run", "build"]);
 }
 
-if (existsSync(standaloneServer)) {
-  run("node", [standaloneServer]);
-} else {
-  run("npm", ["run", "start", "--", "-H", "0.0.0.0", "-p", port]);
-}
+run("npm", ["run", "start", "--", "-H", "0.0.0.0", "-p", port]);
