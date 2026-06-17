@@ -159,7 +159,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         view={view}
       />
 
-      <ScenarioDashboard />
+      <ScenarioDashboard
+        key={asset === "ETH" ? "ETH" : "BTC"}
+        initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
+      />
 
       {view === "overview" ? (
         <section className="dashboard-content-grid grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">

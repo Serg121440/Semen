@@ -121,8 +121,12 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
   }
 };
 
-export function ScenarioDashboard() {
-  const [symbol, setSymbol] = useState<SymbolKey>("BTC");
+export function ScenarioDashboard({
+  initialSymbol = "BTC"
+}: {
+  initialSymbol?: SymbolKey;
+}) {
+  const [symbol, setSymbol] = useState<SymbolKey>(initialSymbol);
   const [filter, setFilter] = useState<FilterKind>("all");
   const data = DATA[symbol];
   const visibleLevels = useMemo(
