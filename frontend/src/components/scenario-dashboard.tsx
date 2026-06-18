@@ -38,6 +38,7 @@ type HeatRow = {
 
 type Setup = {
   title: string;
+  mode: "Intraday" | "2-3 дня";
   probability: string;
   entry: string;
   targets: string;
@@ -63,6 +64,8 @@ type ScenarioConfig = {
   heatmap: HeatRow[];
   longSetup: Setup;
   shortSetup: Setup;
+  swingLongSetup?: Setup;
+  swingShortSetup?: Setup;
   isLive: boolean;
 };
 
@@ -112,6 +115,7 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
     ],
     longSetup: {
       title: "Лонг сетап",
+      mode: "Intraday",
       probability: "54%",
       entry: "66 800 - 67 400",
       targets: "68 200 · 69 500 · 71 000",
@@ -122,6 +126,7 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
     },
     shortSetup: {
       title: "Шорт сетап",
+      mode: "Intraday",
       probability: "46%",
       entry: "пробой 66 800",
       targets: "65 200 · 63 800 · 62 600",
@@ -173,6 +178,7 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
     ],
     longSetup: {
       title: "Лонг сетап",
+      mode: "Intraday",
       probability: "55%",
       entry: "1 640 - 1 662",
       targets: "1 713 · 1 765 · 1 801",
@@ -183,6 +189,7 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
     },
     shortSetup: {
       title: "Шорт сетап",
+      mode: "Intraday",
       probability: "45%",
       entry: "пробой 1 640",
       targets: "1 610 · 1 571 · 1 501",
@@ -262,11 +269,30 @@ function buildLiveScenario(
   const keyLevel = `${formatPrice(Math.min(support, resistance))} - ${formatPrice(Math.max(support, resistance))}`;
   const above = formatSequence([upper1, upper2, upper3], symbol);
   const below = formatSequence([lower1, lower2, lower3], symbol);
-  const longStop = support - atr * 0.75;
-  const shortStop = resistance + atr * 0.75;
   const consensus = marketAnalysis?.consensus.direction;
   const longProbability = consensus === "up" ? 58 : consensus === "down" ? 42 : 52;
   const shortProbability = 100 - longProbability;
+  const precision = symbol === "BTC" ? 0 : 2;
+  const intradayLongEntryLow = current - atr * 0.18;
+  const intradayLongEntryHigh = current + atr * 0.08;
+  const intradayShortEntryLow = current - atr * 0.08;
+  const intradayShortEntryHigh = current + atr * 0.18;
+  const intradayLongStop = current - atr * 0.48;
+  const intradayShortStop = current + atr * 0.48;
+  const intradayLongTargets = [current + atr * 0.55, current + atr * 0.95, current + atr * 1.35];
+  const intradayShortTargets = [current - atr * 0.55, current - atr * 0.95, current - atr * 1.35];
+  const swingLongEntryLow = support - atr * 0.1;
+  const swingLongEntryHigh = support + atr * 0.35;
+  const swingShortEntryLow = resistance - atr * 0.35;
+  const swingShortEntryHigh = resistance + atr * 0.1;
+  const swingLongStop = support - atr * 0.75;
+  const swingShortStop = resistance + atr * 0.75;
+  const swingLongTargets = [upper1, upper2, upper3];
+  const swingShortTargets = [lower1, lower2, lower3];
+  const intradayLongEntry = formatRange(intradayLongEntryLow, intradayLongEntryHigh, precision);
+  const intradayShortEntry = formatRange(intradayShortEntryLow, intradayShortEntryHigh, precision);
+  const swingLongEntry = formatRange(swingLongEntryLow, swingLongEntryHigh, precision);
+  const swingShortEntry = formatRange(swingShortEntryLow, swingShortEntryHigh, precision);
 
   return {
     ...base,
@@ -286,22 +312,46 @@ function buildLiveScenario(
     heatmap,
     longSetup: {
       title: "Лонг сетап",
+      mode: "Intraday",
       probability: `${longProbability}%`,
-      entry: keyLevel,
-      targets: formatSequence([upper1, upper2, upper3], symbol, " · "),
-      stop: formatPrice(longStop, symbol === "BTC" ? 0 : 2),
-      rr: riskReward(current, longStop, upper2),
-      condition: `Условие: удержание ${formatPrice(support)} и возврат выше ${formatPrice(upper1)}.`,
+      entry: intradayLongEntry,
+      targets: formatSequence(intradayLongTargets, symbol, " · ", precision),
+      stop: formatPrice(intradayLongStop, precision),
+      rr: riskReward(current, intradayLongStop, intradayLongTargets[1]),
+      condition: `Внутри дня: вход только при удержании ${formatPrice(current, precision)} и реакции выше EMA/локальной поддержки.`,
       tone: "green"
     },
     shortSetup: {
       title: "Шорт сетап",
+      mode: "Intraday",
       probability: `${shortProbability}%`,
-      entry: `пробой ${formatPrice(support)}`,
-      targets: formatSequence([lower1, lower2, lower3], symbol, " · "),
-      stop: formatPrice(shortStop, symbol === "BTC" ? 0 : 2),
-      rr: riskReward(current, shortStop, lower2),
-      condition: `Условие: закрепление ниже ${formatPrice(support)} и ретест снизу.`,
+      entry: intradayShortEntry,
+      targets: formatSequence(intradayShortTargets, symbol, " · ", precision),
+      stop: formatPrice(intradayShortStop, precision),
+      rr: riskReward(current, intradayShortStop, intradayShortTargets[1]),
+      condition: `Внутри дня: шорт только при отказе от ${formatPrice(current, precision)} и уходе ниже локальной поддержки.`,
+      tone: "red"
+    },
+    swingLongSetup: {
+      title: "Лонг сетап",
+      mode: "2-3 дня",
+      probability: `${longProbability}%`,
+      entry: swingLongEntry,
+      targets: formatSequence(swingLongTargets, symbol, " · ", precision),
+      stop: formatPrice(swingLongStop, precision),
+      rr: riskReward(current, swingLongStop, swingLongTargets[1]),
+      condition: `2-3 дня: набор от зоны ${formatPrice(support, precision)} только после удержания и возврата спроса.`,
+      tone: "green"
+    },
+    swingShortSetup: {
+      title: "Шорт сетап",
+      mode: "2-3 дня",
+      probability: `${shortProbability}%`,
+      entry: swingShortEntry,
+      targets: formatSequence(swingShortTargets, symbol, " · ", precision),
+      stop: formatPrice(swingShortStop, precision),
+      rr: riskReward(current, swingShortStop, swingShortTargets[1]),
+      condition: `2-3 дня: шорт от сопротивления ${formatPrice(resistance, precision)} или после закрепления ниже поддержки.`,
       tone: "red"
     },
     isLive: currentFromApi !== null
@@ -619,14 +669,37 @@ function LiquidityHeatmap({ config }: { config: ScenarioConfig }) {
 }
 
 function TradeSetups({ config }: { config: ScenarioConfig }) {
+  const [mode, setMode] = useState<"intraday" | "swing">("intraday");
+  const longSetup = mode === "intraday" ? config.longSetup : config.swingLongSetup ?? config.longSetup;
+  const shortSetup = mode === "intraday" ? config.shortSetup : config.swingShortSetup ?? config.shortSetup;
+
   return (
     <div className="scenario-trades xl:col-span-1">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-silver-500">
-        Варианты трейда
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-silver-500">
+          Варианты трейда
+        </div>
+        <div className="flex rounded-lg bg-[#0b0e14] p-1">
+          {[
+            ["intraday", "Intraday"],
+            ["swing", "2-3 дня"]
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setMode(key as "intraday" | "swing")}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                mode === key ? "bg-[#f5a623] text-[#1a1206]" : "text-silver-500 hover:bg-white/[0.04] hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <TradeSetup setup={config.longSetup} direction="long" />
-        <TradeSetup setup={config.shortSetup} direction="short" />
+        <TradeSetup setup={longSetup} direction="long" />
+        <TradeSetup setup={shortSetup} direction="short" />
       </div>
     </div>
   );
@@ -639,6 +712,9 @@ function TradeSetup({ setup, direction }: { setup: Setup; direction: "long" | "s
       <div className="mb-3 flex items-center justify-between gap-3">
         <span className={`rounded-md px-3 py-1 text-xs font-semibold ${isLong ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
           {isLong ? "▲" : "▼"} {setup.title}
+        </span>
+        <span className="rounded-md bg-white/[0.05] px-2 py-1 text-[10px] font-semibold text-silver-400">
+          {setup.mode}
         </span>
         <span className="text-xs text-silver-500">
           вероятн. <b className="font-mono text-white">{setup.probability}</b>
@@ -938,10 +1014,14 @@ function formatNotional(value: number | null | undefined): string {
 function formatSequence(
   values: number[],
   symbol: SymbolKey,
-  separator = " -> "
+  separator = " -> ",
+  decimals = symbol === "BTC" ? 0 : 0
 ): string {
-  const decimals = symbol === "BTC" ? 0 : 0;
   return values.map((value) => formatPrice(value, decimals)).join(separator);
+}
+
+function formatRange(from: number, to: number, decimals: number): string {
+  return `${formatPrice(Math.min(from, to), decimals)} - ${formatPrice(Math.max(from, to), decimals)}`;
 }
 
 function riskReward(current: number, stop: number, target: number): string {
