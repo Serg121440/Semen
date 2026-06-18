@@ -6,7 +6,9 @@ import {
   ArrowUp,
   Clock3,
   Gauge,
-  Layers3
+  Layers3,
+  TrendingDown,
+  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -17,6 +19,7 @@ type SymbolKey = "BTC" | "ETH";
 type LevelKind = "resistance" | "support" | "reaction" | "key" | "mid";
 type FilterKind = "all" | "resistance" | "support";
 type ScenarioHorizon = "intraday" | "swing";
+type TrendTone = "green" | "red" | "gold" | "blue";
 
 type Level = {
   price: number;
@@ -50,6 +53,15 @@ type Setup = {
   tone: "green" | "red";
 };
 
+type TrendView = {
+  label: string;
+  direction: "up" | "down" | "sideways" | "mixed";
+  strength: number;
+  timeframe: string;
+  detail: string;
+  tone: TrendTone;
+};
+
 type ScenarioConfig = {
   title: string;
   pair: string;
@@ -68,6 +80,7 @@ type ScenarioConfig = {
   shortSetup: Setup;
   swingLongSetup?: Setup;
   swingShortSetup?: Setup;
+  trend: Record<ScenarioHorizon, TrendView>;
   isLive: boolean;
 };
 
@@ -80,6 +93,7 @@ type ScenarioSummary = {
   bullish: string;
   bearish: string;
   note: string;
+  trend: TrendView;
 };
 
 type SwitchTarget = {
@@ -148,6 +162,24 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
       condition: "Условие: закрепление ниже 66 800 и ретест снизу.",
       tone: "red"
     },
+    trend: {
+      intraday: {
+        label: "Вверх",
+        direction: "up",
+        strength: 54,
+        timeframe: "15m + 1h",
+        detail: "Младший тренд выше локальных EMA, но рядом зона сопротивления.",
+        tone: "green"
+      },
+      swing: {
+        label: "Смешанный",
+        direction: "mixed",
+        strength: 46,
+        timeframe: "4h + 1d",
+        detail: "Старшие интервалы в широком диапазоне, подтверждение только после выхода из ключевой зоны.",
+        tone: "gold"
+      }
+    },
     isLive: false
   },
   ETH: {
@@ -210,6 +242,24 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
       rr: "1 : 3.0",
       condition: "Условие: закрепление ниже 1 640 и ретест снизу.",
       tone: "red"
+    },
+    trend: {
+      intraday: {
+        label: "Вверх",
+        direction: "up",
+        strength: 55,
+        timeframe: "15m + 1h",
+        detail: "Младший тренд растущий, но вход нужен после удержания локальной поддержки.",
+        tone: "green"
+      },
+      swing: {
+        label: "Смешанный",
+        direction: "mixed",
+        strength: 48,
+        timeframe: "4h + 1d",
+        detail: "Старший тренд без полного подтверждения, важна реакция у ключевых уровней.",
+        tone: "gold"
+      }
     },
     isLive: false
   }
@@ -367,6 +417,7 @@ function buildLiveScenario(
       condition: `2-3 дня: шорт от сопротивления ${formatPrice(resistance, precision)} или после закрепления ниже поддержки.`,
       tone: "red"
     },
+    trend: buildTrendViews(marketAnalysis, base),
     isLive: currentFromApi !== null
   };
 }
@@ -463,6 +514,8 @@ export function ScenarioDashboard({
             ))}
           </div>
         </div>
+
+        <TrendCard trend={summary.trend} />
 
         <div className="mb-4 grid gap-3 md:grid-cols-3">
           <QuickMetric icon={<Gauge className="h-4 w-4" />} label={summary.keyLabel} value={summary.keyLevel} />
@@ -708,6 +761,53 @@ function LiquidityHeatmap({ config }: { config: ScenarioConfig }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function TrendCard({ trend }: { trend: TrendView }) {
+  const isUp = trend.direction === "up";
+  const isDown = trend.direction === "down";
+  const Icon = isUp ? TrendingUp : isDown ? TrendingDown : Activity;
+  const toneClass =
+    trend.tone === "green"
+      ? "border-emerald-500/25 bg-emerald-500/[0.075] text-emerald-300"
+      : trend.tone === "red"
+        ? "border-red-500/25 bg-red-500/[0.075] text-red-300"
+        : trend.tone === "gold"
+          ? "border-gold-400/20 bg-gold-400/[0.065] text-gold-300"
+          : "border-[#5b7cff]/25 bg-[#5b7cff]/[0.075] text-[#9cafef]";
+  const fillClass =
+    trend.tone === "green"
+      ? "bg-emerald-400"
+      : trend.tone === "red"
+        ? "bg-red-400"
+        : trend.tone === "gold"
+          ? "bg-gold-400"
+          : "bg-[#5b7cff]";
+
+  return (
+    <div className={`mb-4 rounded-lg border p-4 ${toneClass}`}>
+      <div className="grid gap-3 md:grid-cols-[220px_1fr] md:items-center">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]">
+            <Icon className="h-4 w-4" />
+            Тренд
+          </div>
+          <div className="text-2xl font-semibold text-white">{trend.label}</div>
+          <div className="mt-1 font-mono text-xs text-silver-500">{trend.timeframe}</div>
+        </div>
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs text-silver-500">
+            <span>сила движения</span>
+            <span className="font-mono font-semibold text-white">{trend.strength}/100</span>
+          </div>
+          <div className="mb-3 h-2 overflow-hidden rounded-full bg-[#080a0e]">
+            <div className={`h-full rounded-full ${fillClass}`} style={{ width: `${Math.max(6, trend.strength)}%` }} />
+          </div>
+          <div className="text-sm leading-6 text-silver-300">{trend.detail}</div>
+        </div>
       </div>
     </div>
   );
@@ -1012,6 +1112,7 @@ function pickInterval(analysis: MarketAnalysisResponse | null | undefined) {
 function buildScenarioSummary(config: ScenarioConfig, horizon: ScenarioHorizon): ScenarioSummary {
   const shortTargets = config.shortSetup.targets.replaceAll(" · ", " -> ");
   const longTargets = config.longSetup.targets.replaceAll(" · ", " -> ");
+  const trend = config.trend[horizon];
 
   if (horizon === "intraday") {
     return {
@@ -1022,7 +1123,8 @@ function buildScenarioSummary(config: ScenarioConfig, horizon: ScenarioHorizon):
       below: shortTargets,
       bullish: `${config.longSetup.condition} Ближайшие цели: ${config.longSetup.targets}.`,
       bearish: `${config.shortSetup.condition} Ближайшие цели: ${config.shortSetup.targets}.`,
-      note: "это короткий режим: вход ищем около текущей цены, стоп ближе, цели короче. Подходит для сделки внутри дня, а не для ожидания всего диапазона от поддержки до сопротивления."
+      note: "это короткий режим: вход ищем около текущей цены, стоп ближе, цели короче. Подходит для сделки внутри дня, а не для ожидания всего диапазона от поддержки до сопротивления.",
+      trend
     };
   }
 
@@ -1034,7 +1136,73 @@ function buildScenarioSummary(config: ScenarioConfig, horizon: ScenarioHorizon):
     below: config.below,
     bullish: config.bullish,
     bearish: config.bearish,
-    note: "это широкий сценарий: зона показывает весь коридор между важной поддержкой и сопротивлением. Подходит для плана на 2-3 дня, но не является точкой входа одним ордером."
+    note: "это широкий сценарий: зона показывает весь коридор между важной поддержкой и сопротивлением. Подходит для плана на 2-3 дня, но не является точкой входа одним ордером.",
+    trend
+  };
+}
+
+function buildTrendViews(
+  analysis: MarketAnalysisResponse | null | undefined,
+  fallback: ScenarioConfig
+): Record<ScenarioHorizon, TrendView> {
+  if (!analysis) return fallback.trend;
+
+  return {
+    intraday: trendFromIntervals(
+      [analysis.intervals["15"], analysis.intervals["60"]],
+      "15m + 1h",
+      fallback.trend.intraday
+    ),
+    swing: trendFromIntervals(
+      [analysis.intervals["240"], analysis.intervals.D],
+      "4h + 1d",
+      fallback.trend.swing
+    )
+  };
+}
+
+function trendFromIntervals(
+  intervals: Array<MarketAnalysisResponse["intervals"][string] | undefined>,
+  timeframe: string,
+  fallback: TrendView
+): TrendView {
+  const active = intervals.filter(Boolean) as Array<MarketAnalysisResponse["intervals"][string]>;
+  if (!active.length) return fallback;
+
+  const score = active.reduce((sum, item) => {
+    if (item.direction === "up") return sum + 1;
+    if (item.direction === "down") return sum - 1;
+    return sum;
+  }, 0);
+  const strength = Math.min(100, Math.round(active.reduce((sum, item) => sum + Number(item.strength ?? 0), 0) / active.length));
+  const emaBullish = active.filter((item) => finiteNumber(item.ema20) !== null && finiteNumber(item.ema50) !== null && Number(item.ema20) > Number(item.ema50)).length;
+  const rsiValues = active.map((item) => finiteNumber(item.rsi14)).filter((value): value is number => value !== null);
+  const avgRsi = rsiValues.length ? Math.round(rsiValues.reduce((sum, value) => sum + value, 0) / rsiValues.length) : null;
+  const direction =
+    score > 0
+      ? "up"
+      : score < 0
+        ? "down"
+        : active.every((item) => item.direction === "sideways")
+          ? "sideways"
+          : "mixed";
+  const tone = trendTone(direction);
+  const label = trendLabel(direction);
+  const emaText =
+    emaBullish === active.length
+      ? "EMA20 выше EMA50"
+      : emaBullish === 0
+        ? "EMA20 ниже EMA50"
+        : "EMA смешанные";
+  const rsiText = avgRsi === null ? "RSI нет" : `RSI ${avgRsi}`;
+
+  return {
+    label,
+    direction,
+    strength,
+    timeframe,
+    detail: `${emaText}; ${rsiText}. ${trendMeaning(direction)}`,
+    tone
   };
 }
 
@@ -1110,6 +1278,27 @@ function riskReward(current: number, stop: number, target: number): string {
   const reward = Math.abs(target - current);
   if (!risk || !Number.isFinite(risk) || !Number.isFinite(reward)) return "1 : -";
   return `1 : ${(reward / risk).toFixed(1)}`;
+}
+
+function trendLabel(direction: TrendView["direction"]): string {
+  if (direction === "up") return "Вверх";
+  if (direction === "down") return "Вниз";
+  if (direction === "sideways") return "Боковик";
+  return "Смешанный";
+}
+
+function trendTone(direction: TrendView["direction"]): TrendTone {
+  if (direction === "up") return "green";
+  if (direction === "down") return "red";
+  if (direction === "sideways") return "blue";
+  return "gold";
+}
+
+function trendMeaning(direction: TrendView["direction"]): string {
+  if (direction === "up") return "Преимущество у лонга, но вход только от рабочей зоны.";
+  if (direction === "down") return "Преимущество у шорта, лонг только как короткий отскок.";
+  if (direction === "sideways") return "Рынок без импульса, важнее границы диапазона.";
+  return "Направление спорное, размер сделки лучше снижать до подтверждения.";
 }
 
 function levelTone(kind: LevelKind): string {
