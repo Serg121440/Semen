@@ -87,6 +87,21 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+          <div className="flex rounded-lg bg-[#0b0e14] p-1">
+            {scenarioTargets.map((target) => (
+              <Link
+                key={target.key}
+                href={target.href}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  symbol.startsWith(target.key)
+                    ? "bg-[#f5a623] text-[#1a1206]"
+                    : "text-silver-500 hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                {target.label}
+              </Link>
+            ))}
+          </div>
           <span className="font-mono text-sm text-silver-500">{symbol}</span>
           {selectedSide ? (
             <span className="rounded-md bg-white/[0.05] px-2 py-1 text-xs font-semibold text-silver-300">

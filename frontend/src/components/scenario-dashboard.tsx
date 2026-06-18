@@ -201,9 +201,11 @@ function buildLiveScenario(
   marketAnalysis: MarketAnalysisResponse | null | undefined
 ): ScenarioConfig {
   const base = DATA[symbol];
-  const analysisMatches = symbolKeyFromPair(marketAnalysis?.symbol) === symbol;
+  const analysisSymbol = symbolKeyFromPair(marketAnalysis?.symbol);
+  const analysisMatches = Boolean(marketAnalysis) && (!analysisSymbol || analysisSymbol === symbol);
   const interval = analysisMatches ? pickInterval(marketAnalysis) : null;
-  const current = finiteNumber(currentPrice) ?? finiteNumber(interval?.current_price) ?? base.current;
+  const currentFromApi = finiteNumber(currentPrice) ?? finiteNumber(interval?.current_price);
+  const current = currentFromApi ?? base.current;
   const fallbackWidth = base.range[1] - base.range[0];
   const atr = finiteNumber(interval?.atr14) ?? fallbackWidth * 0.045;
   const support = finiteNumber(interval?.support) ?? current - atr * 3.2;
@@ -302,7 +304,7 @@ function buildLiveScenario(
       condition: `Условие: закрепление ниже ${formatPrice(support)} и ретест снизу.`,
       tone: "red"
     },
-    isLive: analysisMatches
+    isLive: currentFromApi !== null
   };
 }
 
