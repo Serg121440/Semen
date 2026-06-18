@@ -45,6 +45,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     0
   );
   const riskLevel = rescue?.risk_level ?? "low";
+  const scenarioTargets = buildScenarioSwitchTargets(
+    activePositions,
+    symbol,
+    selectedSide,
+    view
+  );
 
   return (
     <main className="dashboard-shell crypto-shell mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
@@ -177,8 +183,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       />
 
       <ScenarioDashboard
-        key={asset === "ETH" ? "ETH" : "BTC"}
+        key={`${symbol}-${selectedSide ?? ""}`}
         initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
+        selectedSymbol={symbol}
+        currentPrice={data.market.current_price}
+        marketAnalysis={data.marketAnalysis}
+        switchTargets={scenarioTargets}
       />
 
       {view === "overview" ? (
@@ -367,6 +377,29 @@ function dashboardHref(
   if (side) params.set("side", side);
   params.set("view", view);
   return `/?${params.toString()}`;
+}
+
+function buildScenarioSwitchTargets(
+  positions: Position[],
+  selectedSymbol: string,
+  selectedSide: string | undefined,
+  view: string
+) {
+  return ([
+    ["ETH", "ETHUSDT"],
+    ["BTC", "BTCUSDT"]
+  ] as const).map(([key, symbol]) => {
+    const sameSymbol = selectedSymbol === symbol;
+    const preferredPosition =
+      positions.find((position) => position.symbol === symbol && position.side === (sameSymbol ? selectedSide : "Buy")) ??
+      positions.find((position) => position.symbol === symbol && position.side === "Buy") ??
+      positions.find((position) => position.symbol === symbol);
+    return {
+      key,
+      label: key,
+      href: dashboardHref(symbol, preferredPosition?.side, view)
+    };
+  });
 }
 
 function PositionSwitcher({

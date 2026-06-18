@@ -7,7 +7,10 @@ import {
   Gauge,
   Layers3
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
+
+import type { MarketAnalysisResponse } from "@/lib/types";
 
 type SymbolKey = "BTC" | "ETH";
 type LevelKind = "resistance" | "support" | "reaction" | "key" | "mid";
@@ -60,6 +63,13 @@ type ScenarioConfig = {
   heatmap: HeatRow[];
   longSetup: Setup;
   shortSetup: Setup;
+  isLive: boolean;
+};
+
+type SwitchTarget = {
+  key: SymbolKey;
+  href: string;
+  label: string;
 };
 
 const DATA: Record<SymbolKey, ScenarioConfig> = {
@@ -119,7 +129,8 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
       rr: "1 : 2.8",
       condition: "Условие: закрепление ниже 66 800 и ретест снизу.",
       tone: "red"
-    }
+    },
+    isLive: false
   },
   ETH: {
     title: "Ethereum / TetherUS",
@@ -179,18 +190,141 @@ const DATA: Record<SymbolKey, ScenarioConfig> = {
       rr: "1 : 3.0",
       condition: "Условие: закрепление ниже 1 640 и ретест снизу.",
       tone: "red"
-    }
+    },
+    isLive: false
   }
 };
 
+function buildLiveScenario(
+  symbol: SymbolKey,
+  currentPrice: string | number | null | undefined,
+  marketAnalysis: MarketAnalysisResponse | null | undefined
+): ScenarioConfig {
+  const base = DATA[symbol];
+  const analysisMatches = symbolKeyFromPair(marketAnalysis?.symbol) === symbol;
+  const interval = analysisMatches ? pickInterval(marketAnalysis) : null;
+  const current = finiteNumber(currentPrice) ?? finiteNumber(interval?.current_price) ?? base.current;
+  const fallbackWidth = base.range[1] - base.range[0];
+  const atr = finiteNumber(interval?.atr14) ?? fallbackWidth * 0.045;
+  const support = finiteNumber(interval?.support) ?? current - atr * 3.2;
+  const resistance = finiteNumber(interval?.resistance) ?? current + atr * 3.2;
+  const ema20 = finiteNumber(interval?.ema20);
+  const ema50 = finiteNumber(interval?.ema50);
+  const upper1 = Math.max(resistance, current + atr * 0.9);
+  const upper2 = upper1 + atr * 1.25;
+  const upper3 = upper1 + atr * 2.45;
+  const lower1 = Math.min(support, current - atr * 0.9);
+  const lower2 = lower1 - atr * 1.25;
+  const lower3 = lower1 - atr * 2.45;
+  const levels: Level[] = [];
+  const addLevel = (price: number | undefined, label: string, kind: LevelKind) => {
+    if (!Number.isFinite(price)) return;
+    const duplicate = levels.some((level) => Math.abs(level.price - Number(price)) <= Math.max(atr * 0.12, current * 0.001));
+    if (!duplicate) levels.push({ price: Number(price), label, kind });
+  };
+
+  addLevel(upper3, "верхняя цель", "resistance");
+  addLevel(upper2, "сопротивление", "resistance");
+  addLevel(upper1, "ближний триггер", "reaction");
+  addLevel(ema20 ?? undefined, "EMA20", ema20 && ema20 > current ? "resistance" : "support");
+  addLevel(ema50 ?? undefined, "EMA50", ema50 && ema50 > current ? "resistance" : "support");
+  addLevel(support, "поддержка", "key");
+  addLevel(lower2, "следующая", "support");
+  addLevel(lower3, "нижняя цель", "support");
+
+  if (analysisMatches) {
+    marketAnalysis?.liquidity_map.zones.slice(0, 6).forEach((zone) => {
+      const price = finiteNumber(zone.price);
+      if (!price) return;
+      addLevel(
+        price,
+        zone.label || (price > current ? "ликвидность" : "поддержка"),
+        zone.side === "ask" ? "resistance" : zone.side === "bid" ? "support" : "mid"
+      );
+    });
+  }
+
+  const sortedLevels = levels
+    .sort((a, b) => b.price - a.price)
+    .slice(0, 9);
+  const allPrices = [current, support, resistance, upper3, lower3, ...sortedLevels.map((level) => level.price)];
+  const min = Math.min(...allPrices) - atr * 1.4;
+  const max = Math.max(...allPrices) + atr * 1.4;
+  const baseWidth = base.range[1] - base.range[0];
+  const dynamicWidth = Math.max(max - min, baseWidth * 0.35);
+  const scale = dynamicWidth / baseWidth;
+  const closes = base.closes.map((close) => current + (close - base.current) * scale);
+  const heatmap = analysisMatches
+    ? buildHeatmap(marketAnalysis, current)
+    : base.heatmap.map((row) => row.volume === "live" ? { ...row, price: current } : row);
+  const keyLevel = `${formatPrice(Math.min(support, resistance))} - ${formatPrice(Math.max(support, resistance))}`;
+  const above = formatSequence([upper1, upper2, upper3], symbol);
+  const below = formatSequence([lower1, lower2, lower3], symbol);
+  const longStop = support - atr * 0.75;
+  const shortStop = resistance + atr * 0.75;
+  const consensus = marketAnalysis?.consensus.direction;
+  const longProbability = consensus === "up" ? 58 : consensus === "down" ? 42 : 52;
+  const shortProbability = 100 - longProbability;
+
+  return {
+    ...base,
+    keyLevel,
+    above,
+    below,
+    bullish: `Закрепление выше ${formatPrice(upper1)} открывает ${formatPrice(upper2)}, затем ${formatPrice(upper3)}.`,
+    bearish: `Потеря ${formatPrice(lower1)} ведет к ${formatPrice(lower2)}, затем ${formatPrice(lower3)}.`,
+    range: [min, max],
+    current,
+    levels: sortedLevels,
+    bands: [
+      { from: upper2, to: upper1, tone: "red" },
+      { from: support + atr * 0.35, to: support - atr * 0.35, tone: "gold" }
+    ],
+    closes,
+    heatmap,
+    longSetup: {
+      title: "Лонг сетап",
+      probability: `${longProbability}%`,
+      entry: keyLevel,
+      targets: formatSequence([upper1, upper2, upper3], symbol, " · "),
+      stop: formatPrice(longStop, symbol === "BTC" ? 0 : 2),
+      rr: riskReward(current, longStop, upper2),
+      condition: `Условие: удержание ${formatPrice(support)} и возврат выше ${formatPrice(upper1)}.`,
+      tone: "green"
+    },
+    shortSetup: {
+      title: "Шорт сетап",
+      probability: `${shortProbability}%`,
+      entry: `пробой ${formatPrice(support)}`,
+      targets: formatSequence([lower1, lower2, lower3], symbol, " · "),
+      stop: formatPrice(shortStop, symbol === "BTC" ? 0 : 2),
+      rr: riskReward(current, shortStop, lower2),
+      condition: `Условие: закрепление ниже ${formatPrice(support)} и ретест снизу.`,
+      tone: "red"
+    },
+    isLive: analysisMatches
+  };
+}
+
 export function ScenarioDashboard({
-  initialSymbol = "BTC"
+  initialSymbol = "BTC",
+  selectedSymbol,
+  currentPrice,
+  marketAnalysis,
+  switchTargets = defaultSwitchTargets(initialSymbol)
 }: {
   initialSymbol?: SymbolKey;
+  selectedSymbol?: string;
+  currentPrice?: string | number | null;
+  marketAnalysis?: MarketAnalysisResponse | null;
+  switchTargets?: SwitchTarget[];
 }) {
-  const [symbol, setSymbol] = useState<SymbolKey>(initialSymbol);
   const [filter, setFilter] = useState<FilterKind>("all");
-  const data = DATA[symbol];
+  const symbol = symbolKeyFromPair(selectedSymbol) ?? initialSymbol;
+  const data = useMemo(
+    () => buildLiveScenario(symbol, currentPrice, marketAnalysis),
+    [symbol, currentPrice, marketAnalysis]
+  );
   const visibleLevels = useMemo(
     () =>
       data.levels.filter((level) => {
@@ -211,24 +345,28 @@ export function ScenarioDashboard({
               Сценарный анализ
             </div>
             <h2 className="text-2xl font-semibold text-white md:text-[32px]">{data.title}</h2>
-            <div className="mt-2 text-sm text-silver-500">
-              уровни, вероятные маршруты цены и зоны ликвидности
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-silver-500">
+              <span>уровни, вероятные маршруты цены и зоны ликвидности</span>
+              <span className={`rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${
+                data.isLive ? "bg-emerald-500/10 text-emerald-300" : "bg-gold-500/10 text-gold-300"
+              }`}>
+                {data.isLive ? "live api" : "fallback"}
+              </span>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/10 bg-[#0b0e14] p-1">
-            {(["ETH", "BTC"] as SymbolKey[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setSymbol(item)}
+            {switchTargets.map((item) => (
+              <Link
+                key={item.key}
+                href={item.href}
                 className={`rounded-md px-4 py-2 text-sm font-semibold transition duration-150 active:scale-[0.98] ${
-                  symbol === item
+                  symbol === item.key
                     ? "bg-[#f5a623] text-[#1a1206]"
                     : "text-silver-500 hover:bg-white/[0.04] hover:text-white"
                 }`}
               >
-                {item}
-              </button>
+                {item.label}
+              </Link>
             ))}
           </div>
         </div>
@@ -713,6 +851,102 @@ function levelColor(kind: LevelKind): string {
   if (kind === "support") return "#26c281";
   if (kind === "key" || kind === "mid") return "#f5a623";
   return "#5b7cff";
+}
+
+function defaultSwitchTargets(initialSymbol: SymbolKey): SwitchTarget[] {
+  return ([
+    { key: "ETH", label: "ETH", href: "/?symbol=ETHUSDT&side=Buy&view=analysis" },
+    { key: "BTC", label: "BTC", href: "/?symbol=BTCUSDT&side=Buy&view=analysis" }
+  ] satisfies SwitchTarget[]).sort((a) => (a.key === initialSymbol ? -1 : 0));
+}
+
+function symbolKeyFromPair(symbol: string | null | undefined): SymbolKey | null {
+  if (!symbol) return null;
+  if (symbol.startsWith("ETH")) return "ETH";
+  if (symbol.startsWith("BTC")) return "BTC";
+  return null;
+}
+
+function pickInterval(analysis: MarketAnalysisResponse | null | undefined) {
+  if (!analysis) return null;
+  return (
+    analysis.intervals["240"] ??
+    analysis.intervals["60"] ??
+    analysis.intervals.D ??
+    analysis.intervals["15"] ??
+    Object.values(analysis.intervals)[0] ??
+    null
+  );
+}
+
+function finiteNumber(value: string | number | null | undefined): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function buildHeatmap(
+  analysis: MarketAnalysisResponse | null | undefined,
+  current: number
+): HeatRow[] {
+  const zones = analysis?.liquidity_map.zones ?? [];
+  const mapped = zones
+    .map((zone) => ({
+      price: finiteNumber(zone.price),
+      notional: finiteNumber(zone.notional),
+      side: zone.side
+    }))
+    .filter((zone): zone is { price: number; notional: number | null; side: "bid" | "ask" | "liquidation" } =>
+      Number.isFinite(zone.price)
+    );
+  const maxNotional = Math.max(...mapped.map((zone) => zone.notional ?? 0), 1);
+  const strongestPrice = mapped.reduce(
+    (best, zone) => ((zone.notional ?? 0) > (best.notional ?? 0) ? zone : best),
+    mapped[0]
+  )?.price;
+  const rows: HeatRow[] = mapped
+    .map((zone) => ({
+      price: zone.price,
+      volume: formatNotional(zone.notional),
+      side: (zone.side === "ask" || zone.price > current ? "shorts" : "longs") as HeatRow["side"],
+      strength: Math.max(22, Math.round(((zone.notional ?? 0) / maxNotional) * 100)),
+      magnet: zone.price === strongestPrice || zone.side === "liquidation"
+    }))
+    .sort((a, b) => b.price - a.price);
+
+  rows.push({
+    price: current,
+    volume: "live",
+    side: "shorts",
+    strength: 0
+  });
+
+  return rows
+    .sort((a, b) => b.price - a.price)
+    .slice(0, 9);
+}
+
+function formatNotional(value: number | null | undefined): string {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number) || number <= 0) return "-";
+  if (number >= 1_000_000) return `$${Math.round(number / 1_000_000)}M`;
+  if (number >= 1_000) return `$${Math.round(number / 1_000)}K`;
+  return `$${Math.round(number)}`;
+}
+
+function formatSequence(
+  values: number[],
+  symbol: SymbolKey,
+  separator = " -> "
+): string {
+  const decimals = symbol === "BTC" ? 0 : 0;
+  return values.map((value) => formatPrice(value, decimals)).join(separator);
+}
+
+function riskReward(current: number, stop: number, target: number): string {
+  const risk = Math.abs(current - stop);
+  const reward = Math.abs(target - current);
+  if (!risk || !Number.isFinite(risk) || !Number.isFinite(reward)) return "1 : -";
+  return `1 : ${(reward / risk).toFixed(1)}`;
 }
 
 function levelTone(kind: LevelKind): string {
