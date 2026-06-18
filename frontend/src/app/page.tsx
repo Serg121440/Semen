@@ -503,43 +503,23 @@ function PositionsScreen({
 
   return (
     <section className="grid gap-4">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Открытые позиции">
-          <Metric label="Всего" value={String(active.length)} tone="gold" />
-          <div className="mt-3 text-sm text-silver-500">
-            высокое плечо: {highLeverageCount}
-          </div>
-        </Card>
-
-        <Card title="Суммарный PnL">
-          <Metric
-            label="Нереализованный"
+      <Card title="Портфель позиций" className="p-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <CompactStat label="Открыто" value={String(active.length)} detail={`высокое плечо: ${highLeverageCount}`} tone="gold" />
+          <CompactStat
+            label="Суммарный PnL"
             value={`${money(totalPnl)} USDT`}
             tone={totalPnl < 0 ? "red" : "green"}
           />
-        </Card>
-
-        <Card title="Номинал позиций">
-          <Metric label="Примерно" value={`${money(totalValue)} USDT`} />
-        </Card>
-
-        <Card title="Выбрано для анализа">
-          {selected ? (
-            <>
-              <Metric
-                label={selected.symbol}
-                value={sideLabel(selected.side)}
-                tone={selected.side === "Sell" ? "red" : "green"}
-              />
-              <div className="mt-3 text-sm text-silver-500">
-                размер {compact(selected.size)} · вход {money(selected.avgPrice)}
-              </div>
-            </>
-          ) : (
-            <div className="text-sm text-silver-500">Позиция не выбрана.</div>
-          )}
-        </Card>
-      </div>
+          <CompactStat label="Номинал" value={`${money(totalValue)} USDT`} />
+          <CompactStat
+            label="Выбрано"
+            value={selected ? `${selected.symbol} ${sideLabel(selected.side)}` : "-"}
+            detail={selected ? `размер ${compact(selected.size)} · вход ${money(selected.avgPrice)}` : "позиция не выбрана"}
+            tone={selected?.side === "Sell" ? "red" : selected?.side === "Buy" ? "green" : "default"}
+          />
+        </div>
+      </Card>
 
       <Card title="Позиции">
         <PositionsTable
@@ -551,6 +531,39 @@ function PositionsScreen({
         />
       </Card>
     </section>
+  );
+}
+
+function CompactStat({
+  label,
+  value,
+  detail,
+  tone = "default"
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: "default" | "gold" | "red" | "green";
+}) {
+  const toneClass =
+    tone === "gold"
+      ? "text-gold-300"
+      : tone === "red"
+        ? "text-red-300"
+        : tone === "green"
+          ? "text-emerald-300"
+          : "text-silver-300";
+
+  return (
+    <div className="min-w-0 rounded-lg border border-white/10 bg-white/[0.035] px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+        {label}
+      </div>
+      <div className={`mt-1 truncate text-xl font-semibold ${toneClass}`}>
+        {value}
+      </div>
+      {detail ? <div className="mt-1 truncate text-xs text-silver-500">{detail}</div> : null}
+    </div>
   );
 }
 

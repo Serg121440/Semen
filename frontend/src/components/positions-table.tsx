@@ -30,6 +30,16 @@ export function PositionsTable({
 
   return (
     <div className="grid gap-3">
+      <div className="hidden grid-cols-[1.05fr_0.7fr_0.8fr_0.8fr_0.7fr_0.85fr_0.7fr_0.7fr] gap-2 px-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-silver-500 xl:grid">
+        <span>Позиция</span>
+        <span>Размер</span>
+        <span>Средняя</span>
+        <span>Mark</span>
+        <span>Ликв.</span>
+        <span>Плечо / риск</span>
+        <span>uPnL</span>
+        <span>TP / SL</span>
+      </div>
       {active.map((position) => {
         const leverage = Number(position.leverage || 0);
         const pnl = Number(position.unrealisedPnl || 0);
@@ -51,8 +61,8 @@ export function PositionsTable({
                 : "border-white/10 bg-white/[0.035]"
             }`}
           >
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="grid gap-3 xl:grid-cols-[1.05fr_0.7fr_0.8fr_0.8fr_0.7fr_0.85fr_0.7fr_0.7fr] xl:items-center">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Link
                   href={`/?symbol=${position.symbol}&side=${position.side}&view=${view}`}
                   className="text-lg font-semibold text-gold-300 transition hover:text-gold-200"
@@ -68,20 +78,25 @@ export function PositionsTable({
                   </span>
                 ) : null}
               </div>
-              <span className={`rounded-full border px-2 py-1 text-xs ${riskClass(level)}`}>
-                {riskLabel(level)}
-              </span>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
               <PositionCell label="Размер" value={compact(position.size)} />
               <PositionCell label="Средняя" value={money(position.avgPrice)} />
               <PositionCell label="Mark" value={money(position.markPrice)} />
               <PositionCell label="Ликв." value={money(position.liqPrice ?? position.liquidationPrice)} tone="red" />
-              <PositionCell label="Плечо" value={`${position.leverage}x`} tone={leverage >= 50 ? "red" : "default"} />
+              <div className="min-w-0 rounded-lg bg-[#0b0e14]/70 px-3 py-2 xl:bg-transparent xl:px-0 xl:py-0">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500 xl:hidden">
+                  Плечо / риск
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 xl:mt-0">
+                  <span className={`font-mono text-sm font-semibold ${leverage >= 50 ? "text-red-300" : "text-silver-300"}`}>
+                    {position.leverage}x
+                  </span>
+                  <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${riskClass(level)}`}>
+                    {riskLabel(level)}
+                  </span>
+                </div>
+              </div>
               <PositionCell label="uPnL" value={money(position.unrealisedPnl)} tone={pnl < 0 ? "red" : "green"} />
-              <PositionCell label="TP" value={position.takeProfit || "-"} />
-              <PositionCell label="SL" value={position.stopLoss || "-"} />
+              <PositionCell label="TP / SL" value={`${position.takeProfit || "-"} / ${position.stopLoss || "-"}`} />
             </div>
           </div>
         );
@@ -107,11 +122,11 @@ function PositionCell({
         : "text-silver-300";
 
   return (
-    <div className="min-w-0 rounded-lg bg-[#0b0e14]/70 px-3 py-2">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+    <div className="min-w-0 rounded-lg bg-[#0b0e14]/70 px-3 py-2 xl:bg-transparent xl:px-0 xl:py-0">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500 xl:hidden">
         {label}
       </div>
-      <div className={`mt-1 truncate font-mono text-sm font-semibold ${toneClass}`}>
+      <div className={`mt-1 truncate font-mono text-sm font-semibold xl:mt-0 ${toneClass}`}>
         {value}
       </div>
     </div>
