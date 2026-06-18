@@ -133,7 +133,8 @@ const criticalCss = `
   }
 
   .dashboard-content-grid,
-  .scenario-dashboard {
+  .scenario-dashboard,
+  .scenario-lab {
     display: grid;
     gap: 16px;
     grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
@@ -156,6 +157,39 @@ const criticalCss = `
 
   .scenario-card {
     min-height: 0;
+  }
+
+  .crypto-topbar {
+    background: rgba(17, 21, 29, 0.96);
+  }
+
+  .scenario-panel,
+  .scenario-heatmap,
+  .scenario-trades > div > div,
+  .scenario-zones {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #11151d;
+    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.22);
+  }
+
+  .scenario-panel,
+  .scenario-heatmap {
+    padding: 20px;
+  }
+
+  .scenario-chart-frame {
+    min-width: 0;
+    background: #080a0e;
+  }
+
+  .scenario-lab > .scenario-heatmap,
+  .scenario-lab > .scenario-trades {
+    min-width: 0;
+  }
+
+  .font-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   }
 
   main > section {
@@ -282,7 +316,8 @@ const criticalCss = `
     .dashboard-metrics,
     .dashboard-positions,
     .dashboard-content-grid,
-    .scenario-dashboard {
+    .scenario-dashboard,
+    .scenario-lab {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -312,6 +347,7 @@ const criticalCss = `
     .dashboard-positions,
     .dashboard-content-grid,
     .scenario-dashboard,
+    .scenario-lab,
     .dashboard-header-stats,
     main > section:nth-of-type(1),
     main > section:nth-of-type(2),

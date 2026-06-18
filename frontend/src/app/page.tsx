@@ -47,84 +47,101 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const riskLevel = rescue?.risk_level ?? "low";
 
   return (
-    <main className="dashboard-shell mx-auto flex min-h-screen w-full max-w-[1480px] flex-col gap-5 px-5 py-5 lg:px-7">
-      <header className="dashboard-header flex flex-col gap-4 rounded-lg border border-white/10 bg-graphite-850/85 p-4 shadow-gold-soft backdrop-blur md:flex-row md:items-center md:justify-between">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-[0.28em] text-gold-400">
-            Bybit Trading Core
+    <main className="dashboard-shell crypto-shell mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
+      <header className="dashboard-header crypto-topbar flex flex-col gap-4 rounded-lg border border-white/10 bg-[#11151d]/95 p-4 shadow-gold-soft backdrop-blur md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#f5a623] to-[#ff8a3c] text-sm font-bold text-[#1a1206]">
+              C
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-white">Crypto Monitor</div>
+              <div className="text-xs text-silver-500">Bybit Trading Core</div>
+            </div>
           </div>
-          <h1 className="mt-2 text-3xl font-semibold text-white md:text-4xl">
-            Панель управления
-          </h1>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-silver-500">
-            <span>{symbol}</span>
-            {selectedSide ? <span>{sideLabel(selectedSide)}</span> : null}
-            <span>{money(data.market.current_price)} USDT</span>
+          <div className="flex flex-wrap gap-1 rounded-lg bg-[#0b0e14] p-1">
+            {[
+              ["overview", "Обзор"],
+              ["analysis", "Анализ"],
+              ["positions", "Позиции"],
+              ["rescue", "Rescue"]
+            ].map(([key, label]) => (
+              <Link
+                key={key}
+                href={dashboardHref(symbol, selectedSide, key)}
+                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                  view === key
+                    ? "bg-white/[0.07] text-white"
+                    : "text-silver-500 hover:bg-white/[0.04] hover:text-silver-300"
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </div>
-        <div className="flex min-w-0 flex-col gap-3 xl:min-w-[620px]">
-          <div className="dashboard-header-stats grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <HeaderStat label="Кошелек" value={`${money(data.balance.wallet_balance)} USDT`} />
-            <HeaderStat
-              label="PnL"
-              value={`${money(totalPnl)} USDT`}
-              tone={totalPnl < 0 ? "red" : "green"}
-            />
-            <HeaderStat label="Риск" value={`${rescue?.risk_score ?? 0}/100`} tone="gold" />
-            <HeaderStat label="Позиции" value={String(activePositions.length)} />
-          </div>
-          <div className="flex flex-wrap justify-start gap-2 md:justify-end">
-            <Link
-              href={`/rescue?symbol=${symbol}${selectedSide ? `&side=${selectedSide}` : ""}`}
-              className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
-            >
-              Режим спасения
-            </Link>
-            <StatusPill label={data.health.dry_run ? "DRY RUN" : "LIVE"} level="medium" />
-            <StatusPill label={data.health.testnet ? "TESTNET" : "MAINNET"} level="high" />
-            <StatusPill label={data.health.live_trading ? "ТОРГОВЛЯ ВКЛ." : "БЕЗ ОРДЕРОВ"} />
-          </div>
+        <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+          <span className="font-mono text-sm text-silver-500">{symbol}</span>
+          {selectedSide ? (
+            <span className="rounded-md bg-white/[0.05] px-2 py-1 text-xs font-semibold text-silver-300">
+              {sideLabel(selectedSide)}
+            </span>
+          ) : null}
+          <span className="font-mono text-sm font-semibold text-white">
+            {money(data.market.current_price)}
+          </span>
+          <span className={`rounded-md px-2 py-1 font-mono text-xs ${totalPnl < 0 ? "bg-red-500/10 text-red-300" : "bg-emerald-500/10 text-emerald-300"}`}>
+            {money(totalPnl)} USDT
+          </span>
+          <Link
+            href={`/rescue?symbol=${symbol}${selectedSide ? `&side=${selectedSide}` : ""}`}
+            className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
+          >
+            Режим спасения
+          </Link>
+          <StatusPill label={data.health.dry_run ? "DRY RUN" : "LIVE"} level="medium" />
+          <StatusPill label={data.health.live_trading ? "ТОРГОВЛЯ ВКЛ." : "БЕЗ ОРДЕРОВ"} />
         </div>
       </header>
 
-      <nav className="dashboard-nav flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
-        {[
-          ["overview", "Обзор"],
-          ["positions", "Позиции"],
-          ["rescue", "Rescue"],
-          ["analysis", "Теханализ"]
-        ].map(([key, label]) => (
-          <Link
-            key={key}
-            href={dashboardHref(symbol, selectedSide, key)}
-            className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-              view === key
-                ? "bg-gold-500/15 text-gold-300"
-                : "text-silver-500 hover:bg-white/[0.04] hover:text-silver-300"
-            }`}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
-
       <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Баланс USDT">
-          <Metric label="Кошелек" value={`${money(data.balance.wallet_balance)} USDT`} tone="gold" />
-          <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-silver-500">
-            <div>Капитал</div>
-            <div className="text-right text-silver-400">{money(data.balance.equity)}</div>
-            <div>Доступно</div>
-            <div className="text-right text-silver-400">
-              {money(data.balance.available_balance)}
+        <Card title="Капитал · Equity" className={Number(data.balance.equity) < 0 ? "border-red-500/35 bg-red-500/[0.06]" : ""}>
+          <div className="flex items-start justify-between gap-3">
+            <Metric
+              label="Equity"
+              value={`${money(data.balance.equity)} USDT`}
+              tone={Number(data.balance.equity) < 0 ? "red" : "green"}
+            />
+            {Number(data.balance.equity) < 0 ? (
+              <span className="rounded-full bg-gold-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-gold-300">
+                риск
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-3 text-sm">
+            <div>
+              <div className="text-xs text-silver-500">Кошелек</div>
+              <div className="mt-1 font-mono text-silver-300">{money(data.balance.wallet_balance)}</div>
+            </div>
+            <div className="self-end pb-0.5 text-silver-700">+</div>
+            <div>
+              <div className="text-xs text-silver-500">Нереализ. PnL</div>
+              <div className={`mt-1 font-mono ${totalPnl < 0 ? "text-red-300" : "text-emerald-300"}`}>
+                {money(totalPnl)}
+              </div>
             </div>
           </div>
         </Card>
 
-        <Card title={symbol}>
+        <Card title={`${symbol} · текущая цена`}>
           <Metric label="Текущая цена" value={money(data.market.current_price)} tone="default" />
-          <div className="mt-4 text-sm text-silver-500">
-            шаг цены {data.market.rules.tick_size} / шаг объема {data.market.rules.qty_step}
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-silver-500">
+            <span className="rounded-md bg-white/[0.04] px-2 py-1">
+              шаг цены {data.market.rules.tick_size}
+            </span>
+            <span className="rounded-md bg-white/[0.04] px-2 py-1">
+              шаг объема {data.market.rules.qty_step}
+            </span>
           </div>
         </Card>
 
@@ -350,34 +367,6 @@ function dashboardHref(
   if (side) params.set("side", side);
   params.set("view", view);
   return `/?${params.toString()}`;
-}
-
-function HeaderStat({
-  label,
-  value,
-  tone = "default"
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "green" | "red" | "gold";
-}) {
-  const toneClass =
-    tone === "green"
-      ? "text-emerald-300"
-      : tone === "red"
-        ? "text-red-300"
-        : tone === "gold"
-          ? "text-gold-300"
-          : "text-white";
-
-  return (
-    <div className="dashboard-stat-chip rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-silver-500">
-        {label}
-      </div>
-      <div className={`mt-1 truncate text-sm font-semibold ${toneClass}`}>{value}</div>
-    </div>
-  );
 }
 
 function PositionSwitcher({
