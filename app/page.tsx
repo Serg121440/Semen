@@ -20,7 +20,7 @@ import {
   translateWarning
 } from "@/lib/format";
 import { loadDashboard } from "@/lib/api";
-import type { Position } from "@/lib/types";
+import type { Position, RescuePlan } from "@/lib/types";
 
 type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -197,14 +197,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         view={view}
       />
 
-      <ScenarioDashboard
-        key={`${symbol}-${selectedSide ?? ""}`}
-        initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
-        selectedSymbol={symbol}
-        currentPrice={data.market.current_price}
-        marketAnalysis={data.marketAnalysis}
-        switchTargets={scenarioTargets}
-      />
+      {view === "overview" || view === "analysis" ? (
+        <ScenarioDashboard
+          key={`${symbol}-${selectedSide ?? ""}`}
+          initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
+          selectedSymbol={symbol}
+          currentPrice={data.market.current_price}
+          marketAnalysis={data.marketAnalysis}
+          switchTargets={scenarioTargets}
+        />
+      ) : null}
 
       {view === "overview" ? (
         <section className="dashboard-content-grid grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
@@ -236,15 +238,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ) : null}
 
       {view === "positions" ? (
-        <Card title="Позиции">
-          <PositionsTable
-            positions={data.positions.positions}
-            rescue={rescue}
-            selectedSymbol={activePosition?.symbol}
-            selectedSide={selectedSide}
-            view={view}
-          />
-        </Card>
+        <PositionsScreen
+          positions={data.positions.positions}
+          rescue={rescue}
+          selectedSymbol={activePosition?.symbol}
+          selectedSide={selectedSide}
+          view={view}
+        />
       ) : null}
 
       {view === "analysis" ? (
@@ -469,6 +469,87 @@ function PositionSwitcher({
           </Link>
         );
       })}
+    </section>
+  );
+}
+
+function PositionsScreen({
+  positions,
+  rescue,
+  selectedSymbol,
+  selectedSide,
+  view
+}: {
+  positions: Position[];
+  rescue: RescuePlan | null;
+  selectedSymbol?: string;
+  selectedSide?: string;
+  view: string;
+}) {
+  const active = positions.filter((position) => Number(position.size) > 0);
+  const selected = active.find(
+    (position) => position.symbol === selectedSymbol && position.side === selectedSide
+  );
+  const totalPnl = active.reduce(
+    (sum, position) => sum + Number(position.unrealisedPnl || 0),
+    0
+  );
+  const totalValue = active.reduce((sum, position) => {
+    const explicitValue = Number(position.positionValue || 0);
+    if (explicitValue > 0) return sum + explicitValue;
+    return sum + Number(position.size || 0) * Number(position.markPrice || 0);
+  }, 0);
+  const highLeverageCount = active.filter((position) => Number(position.leverage || 0) >= 50).length;
+
+  return (
+    <section className="grid gap-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card title="Открытые позиции">
+          <Metric label="Всего" value={String(active.length)} tone="gold" />
+          <div className="mt-3 text-sm text-silver-500">
+            высокое плечо: {highLeverageCount}
+          </div>
+        </Card>
+
+        <Card title="Суммарный PnL">
+          <Metric
+            label="Нереализованный"
+            value={`${money(totalPnl)} USDT`}
+            tone={totalPnl < 0 ? "red" : "green"}
+          />
+        </Card>
+
+        <Card title="Номинал позиций">
+          <Metric label="Примерно" value={`${money(totalValue)} USDT`} />
+        </Card>
+
+        <Card title="Выбрано для анализа">
+          {selected ? (
+            <>
+              <Metric
+                label={selected.symbol}
+                value={sideLabel(selected.side)}
+                tone={selected.side === "Sell" ? "red" : "green"}
+              />
+              <div className="mt-3 text-sm text-silver-500">
+                размер {compact(selected.size)} · вход {money(selected.avgPrice)}
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-silver-500">Позиция не выбрана.</div>
+          )}
+        </Card>
+      </div>
+
+      <Card title="Позиции">
+        <PositionsTable
+          positions={positions}
+          rescue={rescue}
+          selectedSymbol={selectedSymbol}
+          selectedSide={selectedSide}
+          view={view}
+        />
+      </Card>
     </section>
   );
 }
