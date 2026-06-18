@@ -197,7 +197,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         view={view}
       />
 
-      {view === "overview" || view === "analysis" ? (
+      {view === "analysis" ? (
         <ScenarioDashboard
           key={`${symbol}-${selectedSide ?? ""}`}
           initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
@@ -209,32 +209,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ) : null}
 
       {view === "overview" ? (
-        <section className="dashboard-content-grid grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card title="Текущая позиция">
-            {activePosition ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <Metric
-                  label="Сторона"
-                  value={sideLabel(activePosition.side)}
-                  tone="gold"
-                />
-                <Metric label="Размер" value={`${compact(activePosition.size)} ${asset}`} />
-                <Metric label="Плечо" value={`${activePosition.leverage}x`} tone="red" />
-                <Metric label="Вход" value={money(activePosition.avgPrice)} />
-                <Metric label="Mark" value={money(activePosition.markPrice)} />
-                <Metric
-                  label="Ликвидация"
-                  value={money(activePosition.liqPrice ?? activePosition.liquidationPrice)}
-                  tone="red"
-                />
-              </div>
-            ) : (
-              <div className="text-sm text-silver-500">Активных позиций нет.</div>
-            )}
-          </Card>
-
-          <WarningsCard warnings={rescue?.warnings ?? []} />
-        </section>
+        <OverviewScreen
+          activePosition={activePosition}
+          positions={activePositions}
+          rescue={rescue}
+          totalPnl={totalPnl}
+          equity={data.balance.equity}
+          wallet={data.balance.wallet_balance}
+          symbol={symbol}
+          selectedSide={selectedSide}
+        />
       ) : null}
 
       {view === "positions" ? (
@@ -473,6 +457,155 @@ function PositionSwitcher({
   );
 }
 
+function OverviewScreen({
+  activePosition,
+  positions,
+  rescue,
+  totalPnl,
+  equity,
+  wallet,
+  symbol,
+  selectedSide
+}: {
+  activePosition: Position | null;
+  positions: Position[];
+  rescue: RescuePlan | null;
+  totalPnl: number;
+  equity: string | null | undefined;
+  wallet: string | null | undefined;
+  symbol: string;
+  selectedSide?: string;
+}) {
+  const equityNumber = Number(equity ?? 0);
+  const riskScore = rescue?.risk_score ?? estimatePortfolioRisk(positions, equityNumber);
+  const riskLevel = rescue?.risk_level ?? (riskScore >= 80 ? "critical" : riskScore >= 60 ? "high" : riskScore >= 35 ? "medium" : "low");
+  const threats = positions
+    .map((position) => ({ position, distance: liquidationDistancePercent(position) }))
+    .filter((item) => item.distance !== null)
+    .sort((a, b) => (a.distance ?? 999) - (b.distance ?? 999))
+    .slice(0, 3);
+  const verdict =
+    riskScore >= 80
+      ? "Счёт под давлением"
+      : riskScore >= 60
+        ? "Риск высокий"
+        : riskScore >= 35
+          ? "Нужен контроль"
+          : "Счёт стабилен";
+  const verdictText =
+    riskScore >= 80
+      ? "Главная задача сейчас - снизить риск и не добавлять плечо. Сначала убираем самые опасные позиции, потом ищем выход к безубытку."
+      : riskScore >= 60
+        ? "Позиции требуют активного контроля: есть высокое плечо и заметный отрицательный PnL. Работай от ликвидаций и защитных уровней."
+        : riskScore >= 35
+          ? "Рынок терпимый, но риск уже не фоновый. Следи за ближайшими ликвидациями и не расширяй сетку без плана."
+          : "Критических сигналов немного. Можно анализировать сценарии без срочной защитной реакции.";
+
+  return (
+    <section className="grid gap-4">
+      <div className="grid gap-4 xl:grid-cols-[1.45fr_0.85fr]">
+        <Card className={`p-6 ${riskScore >= 70 ? "border-red-500/30 bg-red-500/[0.055]" : "border-gold-500/20 bg-gold-500/[0.035]"}`}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-silver-500">
+                Состояние счёта
+              </div>
+              <div className="mt-2 text-3xl font-semibold text-white md:text-4xl">
+                {verdict}
+              </div>
+            </div>
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase ${riskClass(riskLevel)}`}>
+              {riskLabel(riskLevel)}
+            </span>
+          </div>
+          <div className="mb-5 grid gap-3 md:grid-cols-3">
+            <CompactStat label="Equity" value={`${money(equity)} USDT`} tone={equityNumber < 0 ? "red" : "green"} />
+            <CompactStat label="Кошелёк" value={`${money(wallet)} USDT`} />
+            <CompactStat label="uPnL" value={`${money(totalPnl)} USDT`} tone={totalPnl < 0 ? "red" : "green"} />
+          </div>
+          <p className="max-w-3xl text-sm leading-6 text-silver-300">{verdictText}</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link
+              href={dashboardHref(symbol, selectedSide, "rescue")}
+              className="rounded-md bg-[#5b8cff] px-4 py-2 text-sm font-semibold text-[#070a10] transition hover:bg-[#7aa0ff]"
+            >
+              Открыть Rescue
+            </Link>
+            <Link
+              href={dashboardHref(symbol, selectedSide, "analysis")}
+              className="rounded-md border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-silver-300 transition hover:bg-white/[0.07]"
+            >
+              Анализ рынка
+            </Link>
+          </div>
+        </Card>
+
+        <Card title="Риск-гейдж" className="p-5">
+          <div className="flex items-end gap-2">
+            <div className={`text-5xl font-semibold ${riskScore >= 70 ? "text-red-300" : riskScore >= 45 ? "text-gold-300" : "text-emerald-300"}`}>
+              {riskScore}
+            </div>
+            <div className="pb-2 text-sm text-silver-500">/ 100</div>
+          </div>
+          <div className="mt-5 h-2 rounded-full bg-gradient-to-r from-emerald-400 via-gold-400 to-red-400">
+            <div
+              className="h-5 w-1 -translate-y-1.5 rounded bg-white shadow-[0_0_0_2px_#11151d]"
+              style={{ marginLeft: `${Math.min(98, Math.max(0, riskScore))}%` }}
+            />
+          </div>
+          <div className="mt-5 grid gap-2 text-sm text-silver-500">
+            <div>позиций: <span className="font-mono text-silver-300">{positions.length}</span></div>
+            <div>100x: <span className="font-mono text-red-300">{positions.filter((position) => Number(position.leverage || 0) >= 50).length}</span></div>
+            <div>выбрано: <span className="font-mono text-gold-300">{activePosition ? `${activePosition.symbol} ${sideLabel(activePosition.side)}` : "-"}</span></div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
+        <Card title="Ближайшие угрозы ликвидации">
+          {threats.length ? (
+            <div className="grid gap-3">
+              {threats.map(({ position, distance }) => (
+                <ThreatRow key={`${position.symbol}-${position.side}`} position={position} distance={distance ?? 0} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-silver-500">Ликвидационные уровни не получены.</div>
+          )}
+        </Card>
+
+        <WarningsCard warnings={rescue?.warnings ?? []} />
+      </div>
+    </section>
+  );
+}
+
+function ThreatRow({ position, distance }: { position: Position; distance: number }) {
+  const dangerous = distance <= 8;
+  const colorClass = dangerous ? "text-red-300" : distance <= 15 ? "text-gold-300" : "text-emerald-300";
+  return (
+    <div className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 md:grid-cols-[1fr_1fr_1fr] md:items-center">
+      <div>
+        <div className="font-mono font-semibold text-white">{position.symbol}</div>
+        <div className="mt-1 text-xs text-silver-500">{sideLabel(position.side)} · {position.leverage}x</div>
+      </div>
+      <div>
+        <div className="text-xs uppercase tracking-[0.14em] text-silver-500">Ликвидация</div>
+        <div className={`mt-1 font-mono font-semibold ${colorClass}`}>{money(position.liqPrice ?? position.liquidationPrice)}</div>
+      </div>
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-3 text-xs text-silver-500">
+          <span>до ликв.</span>
+          <span className={`font-mono font-semibold ${colorClass}`}>{distance.toFixed(2)}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded bg-[#0b0e14]">
+          <div className={`h-full rounded ${dangerous ? "bg-red-400" : distance <= 15 ? "bg-gold-400" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, Math.max(5, distance * 4))}%` }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PositionsScreen({
   positions,
   rescue,
@@ -565,6 +698,35 @@ function CompactStat({
       {detail ? <div className="mt-1 truncate text-xs text-silver-500">{detail}</div> : null}
     </div>
   );
+}
+
+function liquidationDistancePercent(position: Position): number | null {
+  const mark = Number(position.markPrice || 0);
+  const liquidation = Number(position.liqPrice ?? position.liquidationPrice ?? 0);
+  if (!mark || !liquidation || !Number.isFinite(mark) || !Number.isFinite(liquidation)) return null;
+  return Math.abs((liquidation - mark) / mark) * 100;
+}
+
+function estimatePortfolioRisk(positions: Position[], equity: number): number {
+  const active = positions.filter((position) => Number(position.size || 0) > 0);
+  if (!active.length) return 0;
+  const highLeverage = active.filter((position) => Number(position.leverage || 0) >= 50).length;
+  const loss = Math.abs(
+    active
+      .map((position) => Number(position.unrealisedPnl || 0))
+      .filter((pnl) => pnl < 0)
+      .reduce((sum, pnl) => sum + pnl, 0)
+  );
+  const nearest = Math.min(
+    ...active
+      .map(liquidationDistancePercent)
+      .filter((distance): distance is number => distance !== null),
+    100
+  );
+  const leverageScore = Math.min(35, highLeverage * 9);
+  const lossScore = equity > 0 ? Math.min(35, (loss / equity) * 35) : 25;
+  const liquidationScore = nearest < 5 ? 30 : nearest < 10 ? 22 : nearest < 18 ? 14 : 6;
+  return Math.round(Math.min(100, leverageScore + lossScore + liquidationScore));
 }
 
 function WarningsCard({ warnings }: { warnings: string[] }) {
