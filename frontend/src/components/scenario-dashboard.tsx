@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowDown,
   ArrowUp,
+  Clock3,
   Gauge,
   Layers3
 } from "lucide-react";
@@ -15,6 +16,7 @@ import type { MarketAnalysisResponse } from "@/lib/types";
 type SymbolKey = "BTC" | "ETH";
 type LevelKind = "resistance" | "support" | "reaction" | "key" | "mid";
 type FilterKind = "all" | "resistance" | "support";
+type ScenarioHorizon = "intraday" | "swing";
 
 type Level = {
   price: number;
@@ -67,6 +69,17 @@ type ScenarioConfig = {
   swingLongSetup?: Setup;
   swingShortSetup?: Setup;
   isLive: boolean;
+};
+
+type ScenarioSummary = {
+  horizonLabel: string;
+  keyLabel: string;
+  keyLevel: string;
+  above: string;
+  below: string;
+  bullish: string;
+  bearish: string;
+  note: string;
 };
 
 type SwitchTarget = {
@@ -372,11 +385,13 @@ export function ScenarioDashboard({
   switchTargets?: SwitchTarget[];
 }) {
   const [filter, setFilter] = useState<FilterKind>("all");
+  const [horizon, setHorizon] = useState<ScenarioHorizon>("intraday");
   const symbol = symbolKeyFromPair(selectedSymbol) ?? initialSymbol;
   const data = useMemo(
     () => buildLiveScenario(symbol, currentPrice, marketAnalysis),
     [symbol, currentPrice, marketAnalysis]
   );
+  const summary = useMemo(() => buildScenarioSummary(data, horizon), [data, horizon]);
   const visibleLevels = useMemo(
     () =>
       data.levels.filter((level) => {
@@ -423,10 +438,40 @@ export function ScenarioDashboard({
           </div>
         </div>
 
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#0b0e14] p-2">
+          <div className="inline-flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.16em] text-silver-500">
+            <Clock3 className="h-4 w-4 text-gold-400" />
+            Горизонт анализа
+          </div>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#11151d] p-1">
+            {[
+              ["intraday", "Intraday"],
+              ["swing", "2-3 дня"]
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setHorizon(key as ScenarioHorizon)}
+                className={`rounded-md px-4 py-2 text-xs font-semibold transition duration-150 active:scale-[0.98] ${
+                  horizon === key
+                    ? "bg-[#f5a623] text-[#1a1206]"
+                    : "text-silver-500 hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <QuickMetric icon={<Gauge className="h-4 w-4" />} label="Ключевой уровень" value={data.keyLevel} />
-          <QuickMetric icon={<ArrowUp className="h-4 w-4" />} label="Выше" value={data.above} tone="green" />
-          <QuickMetric icon={<ArrowDown className="h-4 w-4" />} label="Ниже" value={data.below} tone="red" />
+          <QuickMetric icon={<Gauge className="h-4 w-4" />} label={summary.keyLabel} value={summary.keyLevel} />
+          <QuickMetric icon={<ArrowUp className="h-4 w-4" />} label="Выше" value={summary.above} tone="green" />
+          <QuickMetric icon={<ArrowDown className="h-4 w-4" />} label="Ниже" value={summary.below} tone="red" />
+        </div>
+        <div className="mb-4 rounded-lg border border-gold-400/15 bg-gold-400/[0.055] px-3 py-2 text-sm leading-6 text-silver-300">
+          <span className="font-semibold text-gold-300">{summary.horizonLabel}:</span>{" "}
+          {summary.note}
         </div>
 
         <div className="scenario-chart-frame overflow-hidden rounded-lg border border-white/10 bg-[#080a0e]">
@@ -439,19 +484,19 @@ export function ScenarioDashboard({
           tone="green"
           title="Сценарий вверх"
           icon={<ArrowUp className="h-4 w-4" />}
-          text={data.bullish}
+          text={summary.bullish}
         />
         <ScenarioCard
           tone="red"
           title="Сценарий вниз"
           icon={<ArrowDown className="h-4 w-4" />}
-          text={data.bearish}
+          text={summary.bearish}
         />
         <LevelList levels={visibleLevels} filter={filter} setFilter={setFilter} />
       </aside>
 
       <LiquidityHeatmap config={data} />
-      <TradeSetups config={data} />
+      <TradeSetups config={data} mode={horizon} setMode={setHorizon} />
     </section>
   );
 }
@@ -668,8 +713,15 @@ function LiquidityHeatmap({ config }: { config: ScenarioConfig }) {
   );
 }
 
-function TradeSetups({ config }: { config: ScenarioConfig }) {
-  const [mode, setMode] = useState<"intraday" | "swing">("intraday");
+function TradeSetups({
+  config,
+  mode,
+  setMode
+}: {
+  config: ScenarioConfig;
+  mode: ScenarioHorizon;
+  setMode: (mode: ScenarioHorizon) => void;
+}) {
   const longSetup = mode === "intraday" ? config.longSetup : config.swingLongSetup ?? config.longSetup;
   const shortSetup = mode === "intraday" ? config.shortSetup : config.swingShortSetup ?? config.shortSetup;
 
@@ -687,7 +739,7 @@ function TradeSetups({ config }: { config: ScenarioConfig }) {
             <button
               key={key}
               type="button"
-              onClick={() => setMode(key as "intraday" | "swing")}
+              onClick={() => setMode(key as ScenarioHorizon)}
               className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                 mode === key ? "bg-[#f5a623] text-[#1a1206]" : "text-silver-500 hover:bg-white/[0.04] hover:text-white"
               }`}
@@ -955,6 +1007,35 @@ function pickInterval(analysis: MarketAnalysisResponse | null | undefined) {
     Object.values(analysis.intervals)[0] ??
     null
   );
+}
+
+function buildScenarioSummary(config: ScenarioConfig, horizon: ScenarioHorizon): ScenarioSummary {
+  const shortTargets = config.shortSetup.targets.replaceAll(" · ", " -> ");
+  const longTargets = config.longSetup.targets.replaceAll(" · ", " -> ");
+
+  if (horizon === "intraday") {
+    return {
+      horizonLabel: "Intraday",
+      keyLabel: "Рабочая зона",
+      keyLevel: config.longSetup.entry,
+      above: longTargets,
+      below: shortTargets,
+      bullish: `${config.longSetup.condition} Ближайшие цели: ${config.longSetup.targets}.`,
+      bearish: `${config.shortSetup.condition} Ближайшие цели: ${config.shortSetup.targets}.`,
+      note: "это короткий режим: вход ищем около текущей цены, стоп ближе, цели короче. Подходит для сделки внутри дня, а не для ожидания всего диапазона от поддержки до сопротивления."
+    };
+  }
+
+  return {
+    horizonLabel: "2-3 дня",
+    keyLabel: "Ключевой уровень",
+    keyLevel: config.keyLevel,
+    above: config.above,
+    below: config.below,
+    bullish: config.bullish,
+    bearish: config.bearish,
+    note: "это широкий сценарий: зона показывает весь коридор между важной поддержкой и сопротивлением. Подходит для плана на 2-3 дня, но не является точкой входа одним ордером."
+  };
 }
 
 function finiteNumber(value: string | number | null | undefined): number | null {
