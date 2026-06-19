@@ -111,6 +111,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <span className="font-mono text-sm font-semibold text-white">
             {money(data.market.current_price)}
           </span>
+          <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-300">
+            FastAPI · Bybit
+          </span>
           <span className={`rounded-md px-2 py-1 font-mono text-xs ${totalPnl < 0 ? "bg-red-500/10 text-red-300" : "bg-emerald-500/10 text-emerald-300"}`}>
             {money(totalPnl)} USDT
           </span>
