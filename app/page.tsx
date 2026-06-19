@@ -51,83 +51,95 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     selectedSide,
     view
   );
+  const equityNumber = Number(data.balance.equity ?? 0);
+  const headerRiskScore = rescue?.risk_score ?? estimatePortfolioRisk(activePositions, equityNumber);
+  const headerRiskLevel =
+    rescue?.risk_level ?? (headerRiskScore >= 80 ? "critical" : headerRiskScore >= 60 ? "high" : headerRiskScore >= 35 ? "medium" : "low");
 
   return (
-    <main className="dashboard-shell crypto-shell mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
-      <header className="dashboard-header crypto-topbar flex flex-col gap-4 rounded-lg border border-white/10 bg-[#11151d]/95 p-4 shadow-gold-soft backdrop-blur md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#f5a623] to-[#ff8a3c] text-sm font-bold text-[#1a1206]">
+    <main className="min-h-screen bg-[radial-gradient(1100px_520px_at_78%_-12%,rgba(40,62,96,0.16),transparent_62%),#0a0c11] text-[#e7ebf2]">
+      <header className="sticky top-0 z-20 border-b border-white/[0.07] bg-[#0a0c11]/85 px-5 py-2.5 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-5">
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="flex h-[27px] w-[27px] items-center justify-center rounded-lg bg-gradient-to-br from-[#f5a623] to-[#ff7a3c] text-sm font-bold text-[#1a1206]">
               C
             </div>
-            <div>
-              <div className="text-sm font-semibold text-white">Crypto Monitor</div>
-              <div className="text-xs text-silver-500">Bybit Trading Core</div>
+            <div className="leading-none">
+              <div className="text-sm font-semibold tracking-[0.01em] text-white">Trading Core</div>
+              <div className="mt-1 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[#5a6473]">
+                Rescue Terminal
+              </div>
             </div>
+            <span className="rounded-md bg-gold-500/15 px-2 py-1 text-[9.5px] font-bold uppercase tracking-[0.05em] text-gold-300">
+              {data.health.dry_run ? "DRY RUN" : "LIVE"}
+            </span>
+            <span className="rounded-md bg-white/[0.05] px-2 py-1 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-[#7f8a99]">
+              {data.health.live_trading ? "Торговля вкл." : "Без ордеров"}
+            </span>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-lg bg-[#0b0e14] p-1">
-            {[
-              ["overview", "Обзор"],
-              ["analysis", "Анализ"],
-              ["positions", "Позиции"],
-              ["rescue", "Rescue"]
-            ].map(([key, label]) => (
-              <Link
-                key={key}
-                href={dashboardHref(symbol, selectedSide, key)}
-                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                  view === key
-                    ? "bg-white/[0.07] text-white"
-                    : "text-silver-500 hover:bg-white/[0.04] hover:text-silver-300"
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-          <div className="flex rounded-lg bg-[#0b0e14] p-1">
-            {scenarioTargets.map((target) => (
+
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="flex rounded-lg border border-white/[0.08] bg-[#0d1016] p-0.5">
+              {scenarioTargets.map((target) => (
               <Link
                 key={target.key}
                 href={target.href}
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                   symbol.startsWith(target.key)
                     ? "bg-[#f5a623] text-[#1a1206]"
-                    : "text-silver-500 hover:bg-white/[0.04] hover:text-white"
+                    : "text-[#7f8a99] hover:bg-white/[0.04] hover:text-white"
                 }`}
               >
                 {target.label}
               </Link>
             ))}
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-base font-semibold text-white">{money(data.market.current_price)}</span>
+              <span className="rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] font-semibold text-[#7f8a99]">
+                {symbol}{selectedSide ? ` · ${sideLabel(selectedSide)}` : ""}
+              </span>
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            </div>
           </div>
-          <span className="font-mono text-sm text-silver-500">{symbol}</span>
-          {selectedSide ? (
-            <span className="rounded-md bg-white/[0.05] px-2 py-1 text-xs font-semibold text-silver-300">
-              {sideLabel(selectedSide)}
-            </span>
-          ) : null}
-          <span className="font-mono text-sm font-semibold text-white">
-            {money(data.market.current_price)}
-          </span>
-          <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-300">
-            FastAPI · Bybit
-          </span>
-          <span className={`rounded-md px-2 py-1 font-mono text-xs ${totalPnl < 0 ? "bg-red-500/10 text-red-300" : "bg-emerald-500/10 text-emerald-300"}`}>
-            {money(totalPnl)} USDT
-          </span>
-          <Link
-            href={`/rescue?symbol=${symbol}${selectedSide ? `&side=${selectedSide}` : ""}`}
-            className="rounded-full border border-gold-500/30 bg-gold-500/10 px-3 py-1 text-xs font-semibold uppercase text-gold-400 transition hover:bg-gold-500/15"
-          >
-            Режим спасения
-          </Link>
-          <StatusPill label={data.health.dry_run ? "DRY RUN" : "LIVE"} level="medium" />
-          <StatusPill label={data.health.live_trading ? "ТОРГОВЛЯ ВКЛ." : "БЕЗ ОРДЕРОВ"} />
+
+          <div className="flex-1" />
+
+          <div className="flex shrink-0 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0e1118]">
+            <HeaderVital label="Equity" value={`${money(data.balance.equity)} USDT`} tone={equityNumber < 0 ? "red" : "green"} />
+            <HeaderVital label="uPnL" value={`${money(totalPnl)} USDT`} tone={totalPnl < 0 ? "red" : "green"} />
+            <HeaderVital label="Риск" value={`${headerRiskScore} ${riskLabel(headerRiskLevel)}`} tone={headerRiskScore >= 70 ? "red" : headerRiskScore >= 45 ? "gold" : "green"} last />
+          </div>
+          <div className="h-8 w-8 rounded-full border border-white/[0.08] bg-[#1a1f29]" />
         </div>
       </header>
 
+      <div className="flex items-center gap-0 border-b border-white/[0.06] bg-[#0c0e14]/50 px-5">
+        {[
+          ["overview", "Обзор"],
+          ["positions", "Позиции"],
+          ["analysis", "Анализ"],
+          ["rescue", "Спасение"]
+        ].map(([key, label]) => (
+          <Link
+            key={key}
+            href={dashboardHref(symbol, selectedSide, key)}
+            className={`relative px-5 py-3 text-sm font-semibold transition ${
+              view === key ? "text-white" : "text-[#7f8a99] hover:text-silver-300"
+            }`}
+          >
+            {label}
+            <span className={`absolute inset-x-5 bottom-0 h-0.5 rounded-full ${view === key ? "bg-[#5b8cff]" : "bg-transparent"}`} />
+          </Link>
+        ))}
+        <div className="flex-1" />
+        <div className="flex items-center gap-2 font-mono text-[10.5px] text-[#5a6473]">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          FastAPI · Bybit · сейчас
+        </div>
+      </div>
+
+      <div className="dashboard-shell crypto-shell mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
       <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card title="Капитал · Equity" className={Number(data.balance.equity) < 0 ? "border-red-500/35 bg-red-500/[0.06]" : ""}>
           <div className="flex items-start justify-between gap-3">
@@ -354,6 +366,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           Данные обновляются через FastAPI
         </span>
       </footer>
+      </div>
     </main>
   );
 }
@@ -367,6 +380,38 @@ function normalizeView(value: string | undefined): string {
     return value as string;
   }
   return "overview";
+}
+
+function HeaderVital({
+  label,
+  value,
+  tone = "default",
+  last = false
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "green" | "red" | "gold";
+  last?: boolean;
+}) {
+  const toneClass =
+    tone === "green"
+      ? "text-emerald-300"
+      : tone === "red"
+        ? "text-red-300"
+        : tone === "gold"
+          ? "text-gold-300"
+          : "text-silver-300";
+
+  return (
+    <div className={`flex flex-col gap-0.5 px-4 py-2 ${last ? "" : "border-r border-white/[0.06]"}`}>
+      <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#5a6473]">
+        {label}
+      </span>
+      <span className={`font-mono text-sm font-semibold ${toneClass}`}>
+        {value}
+      </span>
+    </div>
+  );
 }
 
 function dashboardHref(
