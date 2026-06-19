@@ -1,22 +1,19 @@
-import { RefreshCcw, ShieldAlert, TrendingUp } from "lucide-react";
+import { RefreshCcw, ShieldAlert } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { Card } from "@/components/card";
 import { MarketAnalysis } from "@/components/market-analysis";
 import { Metric } from "@/components/metric";
 import { PositionsTable } from "@/components/positions-table";
-import { StatusPill } from "@/components/status-pill";
+import { RescueSimulator } from "@/components/rescue-simulator";
 import { ScenarioDashboard } from "@/components/scenario-dashboard";
 import {
-  averagingScenarioLabel,
   compact,
   money,
   riskClass,
   riskLabel,
   sideLabel,
-  trendAlignmentLabel,
-  trendDirectionLabel,
-  trendTone,
   translateWarning
 } from "@/lib/format";
 import { loadDashboard } from "@/lib/api";
@@ -140,6 +137,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       </div>
 
       <div className="dashboard-shell crypto-shell mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
+      {view === "overview" ? (
       <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card title="Капитал · Equity" className={Number(data.balance.equity) < 0 ? "border-red-500/35 bg-red-500/[0.06]" : ""}>
           <div className="flex items-start justify-between gap-3">
@@ -204,13 +202,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </div>
         </Card>
       </section>
+      ) : null}
 
-      <PositionSwitcher
-        positions={activePositions}
-        selectedSymbol={activePosition?.symbol}
-        selectedSide={selectedSide}
-        view={view}
-      />
+      {view === "overview" ? (
+        <PositionSwitcher
+          positions={activePositions}
+          selectedSymbol={activePosition?.symbol}
+          selectedSide={selectedSide}
+          view={view}
+        />
+      ) : null}
 
       {view === "analysis" ? (
         <ScenarioDashboard
@@ -251,112 +252,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ) : null}
 
       {view === "rescue" && rescue ? (
-        <section className="dashboard-content-grid grid gap-4 xl:grid-cols-2">
-          <Card title="Анализ тренда">
-            {data.trend ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <Metric
-                  label="Направление"
-                  value={trendDirectionLabel(data.trend.direction)}
-                  tone={trendTone(data.trend.alignment)}
-                />
-                <Metric
-                  label="Сила"
-                  value={`${data.trend.strength}/100`}
-                  tone={trendTone(data.trend.alignment)}
-                />
-                <Metric
-                  label="К позиции"
-                  value={trendAlignmentLabel(data.trend.alignment)}
-                  tone={trendTone(data.trend.alignment)}
-                />
-                <div className="md:col-span-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-silver-400">
-                  {data.trend.summary}
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-silver-500">Тренд пока не рассчитан.</div>
-            )}
-          </Card>
-
-          <Card title="Режим спасения">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Metric label="До безубытка" value={money(rescue.distance_to_breakeven)} tone="gold" />
-              <Metric label="Нужный отскок" value={`${money(rescue.required_rebound_percent)}%`} />
-              <Metric label="Убыток / баланс" value={`${money(rescue.loss_to_balance_percent)}%`} tone="red" />
-              <Metric label="Просадка" value={`${money(rescue.drawdown_percent)}%`} tone="red" />
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {[
-                "Рассчитать Rescue Plan",
-                "Рассчитать закрытие 25%",
-                "Рассчитать закрытие 50%",
-                "Рассчитать TP-лестницу",
-                "Рассчитать усреднение",
-                "Скопировать план",
-                "Обновить данные"
-              ].map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="rounded-md border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-sm text-gold-400 transition hover:bg-gold-500/15"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          <Card title="Сценарий A: снизить риск">
-            <div className="grid gap-3 text-sm">
-              <ScenarioRow
-                label="Закрыть 25%"
-                qty={rescue.conservative_scenario.close_25_qty}
-                loss={rescue.conservative_scenario.realized_loss_25}
-                remaining={rescue.conservative_scenario.remaining_qty_25}
-              />
-              <ScenarioRow
-                label="Закрыть 50%"
-                qty={rescue.conservative_scenario.close_50_qty}
-                loss={rescue.conservative_scenario.realized_loss_50}
-                remaining={rescue.conservative_scenario.remaining_qty_50}
-              />
-            </div>
-          </Card>
-
-          <Card title="Сценарий B: выход в безубыток">
-            <div className="grid grid-cols-2 gap-3">
-              {Object.entries(rescue.breakeven_scenario.levels).map(([level, price]) => (
-                <div key={level} className="rounded-lg bg-white/[0.035] p-3">
-                  <div className="text-xs uppercase text-silver-500">{level}</div>
-                  <div className="mt-1 text-lg font-semibold text-silver-400">
-                    {money(price)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card title="Сценарий C: контролируемое усреднение">
-            <div className="space-y-3">
-              {Object.entries(rescue.averaging_scenario).map(([name, data]) => (
-                <div key={name} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
-                    <TrendingUp className="h-4 w-4 text-gold-400" />
-                    {averagingScenarioLabel(name)}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm text-silver-500 md:grid-cols-5">
-                    <span>добавить {compact(data.add_qty)}</span>
-                    <span>стоимость {money(data.estimated_cost)}</span>
-                    <span>средняя {money(data.new_avg_price)}</span>
-                    <span>объем {compact(data.new_total_qty)}</span>
-                    <span>отскок {money(data.required_rebound_percent)}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </section>
+        <RescueScreen
+          positions={activePositions}
+          rescue={rescue}
+          wallet={data.balance.wallet_balance}
+          equity={data.balance.equity}
+          totalPnl={totalPnl}
+        />
       ) : null}
 
       <footer className="flex items-center justify-between border-t border-white/10 py-5 text-xs text-silver-500">
@@ -681,28 +583,46 @@ function PositionsScreen({
     return sum + Number(position.size || 0) * Number(position.markPrice || 0);
   }, 0);
   const highLeverageCount = active.filter((position) => Number(position.leverage || 0) >= 50).length;
+  const selectedText = selected ? `${selected.symbol} ${sideLabel(selected.side)}` : "-";
 
   return (
-    <section className="grid gap-4">
-      <Card title="Портфель позиций" className="p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <CompactStat label="Открыто" value={String(active.length)} detail={`высокое плечо: ${highLeverageCount}`} tone="gold" />
-          <CompactStat
-            label="Суммарный PnL"
-            value={`${money(totalPnl)} USDT`}
-            tone={totalPnl < 0 ? "red" : "green"}
-          />
-          <CompactStat label="Номинал" value={`${money(totalValue)} USDT`} />
-          <CompactStat
-            label="Выбрано"
-            value={selected ? `${selected.symbol} ${sideLabel(selected.side)}` : "-"}
-            detail={selected ? `размер ${compact(selected.size)} · вход ${money(selected.avgPrice)}` : "позиция не выбрана"}
-            tone={selected?.side === "Sell" ? "red" : selected?.side === "Buy" ? "green" : "default"}
-          />
+    <section className="grid gap-3">
+      <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#10141b] shadow-[0_18px_55px_rgba(0,0,0,0.22)]">
+        <div className="flex flex-wrap items-start justify-between gap-5 border-b border-white/[0.07] px-5 py-4">
+          <div>
+            <div className="text-xl font-semibold text-white">Открытые позиции</div>
+            <div className="mt-1 text-sm text-silver-500">
+              {active.length} активных · {highLeverageCount} с высоким плечом · сортировка по риску
+            </div>
+          </div>
+          <div className="grid min-w-[360px] grid-cols-3 gap-6 text-right max-sm:min-w-0 max-sm:grid-cols-1 max-sm:text-left">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+                Суммарный uPnL
+              </div>
+              <div className={`mt-1 font-mono text-xl font-semibold ${totalPnl < 0 ? "text-red-300" : "text-emerald-300"}`}>
+                {money(totalPnl)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+                Номинал
+              </div>
+              <div className="mt-1 font-mono text-xl font-semibold text-silver-300">
+                {money(totalValue)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+                Выбрано
+              </div>
+              <div className="mt-1 truncate text-lg font-semibold text-gold-300">
+                {selectedText}
+              </div>
+            </div>
+          </div>
         </div>
-      </Card>
 
-      <Card title="Позиции">
         <PositionsTable
           positions={positions}
           rescue={rescue}
@@ -710,8 +630,160 @@ function PositionsScreen({
           selectedSide={selectedSide}
           view={view}
         />
-      </Card>
+      </div>
+      <div className="text-xs text-silver-600">
+        Подсвечены позиции с дистанцией до ликвидации меньше 8% или с сильной просадкой.
+      </div>
     </section>
+  );
+}
+
+function RescueScreen({
+  positions,
+  rescue,
+  wallet,
+  equity,
+  totalPnl
+}: {
+  positions: Position[];
+  rescue: RescuePlan;
+  wallet: string | null | undefined;
+  equity: string | null | undefined;
+  totalPnl: number;
+}) {
+  const deadLong = positions.find((position) => position.symbol === "BTCUSDT" && position.side === "Buy");
+  const ethLong = positions.find((position) => position.symbol === "ETHUSDT" && position.side === "Buy");
+  const ethShort = positions.find((position) => position.symbol === "ETHUSDT" && position.side === "Sell");
+  const btcShort = positions.find((position) => position.symbol === "BTCUSDT" && position.side === "Sell") ?? positions[0];
+  const btcShortTp = btcShort?.takeProfit || "59 000";
+  const projectedRelief = Math.abs(totalPnl) * 0.32;
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="grid gap-5">
+        <div className="rounded-lg border border-[#5b8cff]/30 bg-[#10141b] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.20)]">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8aa6ff]">
+            План выхода в плюс
+          </div>
+          <div className="mt-3 max-w-3xl text-2xl font-semibold leading-snug text-white">
+            Стратегия в 3 шага: срезать мёртвый груз, снять хедж, сфокусировать капитал на рабочей идее.
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <PlanMetric label="Сейчас" value={money(equity)} tone={Number(equity || 0) < 0 ? "red" : "green"} />
+            <PlanMetric label="Проекция плана" value={`+${money(projectedRelief)}`} tone="green" />
+            <PlanMetric label="Цель +5%" value={`+${money(Number(wallet || 0) * 0.05)}`} tone="gold" />
+          </div>
+        </div>
+
+        <RescueStep
+          index={1}
+          title="Срезать мёртвый груз — BTC Лонг"
+          badge="маржа"
+          badgeTone="blue"
+          value={deadLong ? `+${money(Math.abs(Number(deadLong.positionValue || 0) * 0.1 || Number(deadLong.size || 0) * Number(deadLong.markPrice || 0) * 0.1))}$` : "+резерв"}
+        >
+          Вход {deadLong ? money(deadLong.avgPrice) : "далеко выше рынка"}, рынок против позиции: нужен большой отскок только для безубытка.
+          Закрыть или резко сократить, освободить маржу и остановить каскадный риск.
+        </RescueStep>
+
+        <RescueStep
+          index={2}
+          title="Снять ETH-хедж"
+          badge="риск −2 поз."
+          badgeTone="gold"
+        >
+          {ethLong && ethShort
+            ? `Лонг ${compact(ethLong.size)} и шорт ${compact(ethShort.size)} по ETH гасят друг друга и жгут маржу.`
+            : "ETH-позиции частично компенсируют друг друга и удерживают лишнюю маржу."}
+          Оставить только понятную направленную идею.
+        </RescueStep>
+
+        <RescueStep
+          index={3}
+          title={`Сфокусироваться на BTC-шорте → TP ${btcShortTp}`}
+          badge={`+${money(projectedRelief)}$`}
+          badgeTone="green"
+        >
+          Если рынок остаётся под давлением, основная рабочая идея — BTC-шорт. Свободный капитал не размазывать, а держать под этот сценарий и контроль риска.
+        </RescueStep>
+      </div>
+
+      <RescueSimulator
+        positions={positions}
+        wallet={wallet}
+        initialGoal={5}
+      />
+    </section>
+  );
+}
+
+function PlanMetric({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string;
+  tone: "red" | "green" | "gold";
+}) {
+  const toneClass =
+    tone === "red"
+      ? "text-red-300"
+      : tone === "green"
+        ? "text-emerald-300"
+        : "text-gold-300";
+
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-silver-500">
+        {label}
+      </div>
+      <div className={`mt-1 font-mono text-2xl font-semibold ${toneClass}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function RescueStep({
+  index,
+  title,
+  badge,
+  badgeTone,
+  value,
+  children
+}: {
+  index: number;
+  title: string;
+  badge: string;
+  badgeTone: "blue" | "gold" | "green";
+  value?: string;
+  children: ReactNode;
+}) {
+  const badgeClass =
+    badgeTone === "blue"
+      ? "bg-[#5b8cff]/15 text-[#8aa6ff]"
+      : badgeTone === "green"
+        ? "bg-emerald-500/15 text-emerald-300"
+        : "bg-gold-500/15 text-gold-300";
+
+  return (
+    <div className="rounded-lg border border-white/[0.08] bg-[#10141b] p-5">
+      <div className="flex items-start gap-4">
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-mono text-sm font-bold ${badgeClass}`}>
+          {index}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-semibold text-white">{title}</h3>
+            <span className={`rounded-lg px-3 py-1 font-mono text-xs font-semibold ${badgeClass}`}>
+              {value ?? badge}
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-silver-400">{children}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -798,26 +870,5 @@ function WarningsCard({ warnings }: { warnings: string[] }) {
         )}
       </div>
     </Card>
-  );
-}
-
-function ScenarioRow({
-  label,
-  qty,
-  loss,
-  remaining
-}: {
-  label: string;
-  qty: string;
-  loss: string;
-  remaining: string;
-}) {
-  return (
-    <div className="grid grid-cols-4 gap-3 rounded-lg bg-white/[0.035] p-3">
-      <div className="font-semibold text-white">{label}</div>
-      <div className="text-silver-500">объем {compact(qty)}</div>
-      <div className="text-red-300">убыток {money(loss)}</div>
-      <div className="text-silver-500">остаток {compact(remaining)}</div>
-    </div>
   );
 }
