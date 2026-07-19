@@ -1,0 +1,1 @@
+"""Travel Deals Monitor application."""
