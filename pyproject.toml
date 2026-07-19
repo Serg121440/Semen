@@ -1,0 +1,27 @@
+[project]
+name = "travel-deals-monitor"
+version = "0.1.0"
+description = "Telegram bot for finding short city-break travel deals"
+requires-python = ">=3.12"
+dependencies = [
+  "aiogram>=3.13,<4",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "sqlalchemy[asyncio]>=2.0.35,<3",
+  "asyncpg>=0.29,<1",
+  "alembic>=1.13,<2",
+  "pydantic-settings>=2.5,<3",
+  "redis>=5.1,<6",
+  "apscheduler>=3.10,<4",
+  "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9", "pytest-asyncio>=0.24,<1", "ruff>=0.7,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
