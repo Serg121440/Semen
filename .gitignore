@@ -3,6 +3,13 @@
 
 # Кроме активных проектов и конфигов
 !ozon_supply/
+!Documents/
+Documents/*
+!Documents/Codex/
+Documents/Codex/*
+!Documents/Codex/2026-07-19/
+Documents/Codex/2026-07-19/*
+!Documents/Codex/2026-07-19/travel-deals-monitor-bot-telegram-3/
 !.gitignore
 !.zshrc
 !.zprofile
