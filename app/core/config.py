@@ -16,12 +16,27 @@ class Settings(BaseSettings):
     daily_scan_hour: int = 10
     timezone: str = "Europe/Moscow"
     demo_source_enabled: bool = True
+    telegram_source_enabled: bool = True
+    telegram_channels: str = "samokatus,travelbelka"
+    telegram_request_timeout: float = 15.0
+
+    @property
+    def telegram_channel_names(self) -> tuple[str, ...]:
+        return tuple(
+            item.strip().removeprefix("@").removeprefix("https://t.me/")
+            for item in self.telegram_channels.split(",")
+            if item.strip()
+        )
 
     @field_validator("admin_ids", mode="before")
     @classmethod
     def parse_admin_ids(cls, value: object) -> object:
+        if isinstance(value, int):
+            return (value,)
         if isinstance(value, str):
             return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+        if isinstance(value, list):
+            return tuple(value)
         return value
 
 

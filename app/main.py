@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.database.models import Base
 from app.database.session import engine
 from app.parser.demo import DemoSource
+from app.parser.telegram import PublicTelegramSource
 from app.services import ScanService
 from app.scheduler import daily_scan
 
@@ -27,6 +28,10 @@ async def run() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     sources = [DemoSource()] if settings.demo_source_enabled else []
+    if settings.telegram_source_enabled and settings.telegram_channel_names:
+        sources.append(PublicTelegramSource(
+            settings.telegram_channel_names, timeout=settings.telegram_request_timeout,
+        ))
     scanner = ScanService(sources)
     server = uvicorn.Server(uvicorn.Config(api, host=settings.api_host, port=settings.api_port, log_level="info"))
     tasks = [asyncio.create_task(server.serve())]
