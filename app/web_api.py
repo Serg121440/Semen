@@ -2,7 +2,7 @@ from decimal import Decimal
 from secrets import compare_digest
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -91,6 +91,26 @@ api.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@api.get("/", include_in_schema=False)
+def root() -> dict[str, Any]:
+    """Service banner.
+
+    Exists so uptime probes hitting the container root get a 2xx instead of a
+    404 — the API itself lives under /api.
+    """
+    return {
+        "service": "Bybit Trading Core API",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
+@api.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
 
 
 @api.get("/api/health")

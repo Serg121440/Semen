@@ -19,6 +19,10 @@ import {
 import { loadDashboard } from "@/lib/api";
 import type { Position, RescuePlan } from "@/lib/types";
 
+// Rendered per request: the dashboard reads live account state, and prerendering
+// it at build time would hit the backend before it is reachable.
+export const dynamic = "force-dynamic";
+
 type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };

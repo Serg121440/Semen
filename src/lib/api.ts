@@ -8,20 +8,13 @@ import type {
   MarketAnalysisResponse,
   TrendResponse
 } from "./types";
-import "./tls";
-
-const API_BASE = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8000";
-const API_TOKEN = process.env.BACKEND_API_TOKEN;
+import { backendBase, backendHeaders } from "./backend";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${backendBase()}${path}`, {
     ...init,
     cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
-      ...(init?.headers ?? {})
-    }
+    headers: backendHeaders(init?.headers)
   });
 
   if (!response.ok) {
