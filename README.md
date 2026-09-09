@@ -120,13 +120,13 @@ POST /api/rescue/{symbol}
 
 ## Frontend Dashboard
 
-The Next.js frontend lives in `frontend/` and connects to FastAPI at
-`http://127.0.0.1:8000` by default.
+The Next.js frontend lives at the repository root (`app/` for the App Router,
+`src/` for components and helpers). It reads the backend origin from
+`BACKEND_API_BASE_URL`, which is required — there is no default.
 
 ```bash
-cd frontend
 npm install
-npm run dev
+BACKEND_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
 The frontend is calculation-only: it has no order submission buttons and never
@@ -221,5 +221,6 @@ app/
   models.py
 examples/
 tests/
-frontend/
+app/            # App Router pages and route handlers (alongside the Python package)
+src/            # React components and shared helpers
 ```
