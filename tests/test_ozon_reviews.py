@@ -29,3 +29,9 @@ def test_send_replies():
     client = FakeClient([{"id": "a", "rating": 2}, {"id": "b", "rating": 5}])
     run(client, send=True, pause=0)
     assert [i for i, _ in client.sent] == ["a", "b"]
+
+
+def test_generate_reply_without_key_uses_template():
+    from ozon_reviews.responder import generate_reply
+
+    assert "очень жаль" in generate_reply(1, "плохо", None)

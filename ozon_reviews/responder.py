@@ -36,6 +36,51 @@ REPLIES = {
 }
 
 
+TONE_PROMPT = (
+    "Ты отвечаешь от имени магазина детских товаров «4 сыночка» на отзыв "
+    "покупателя на Ozon. Тон: доброжелательный, сочувствующий, "
+    "сопереживающий, радостный и понимающий. Пиши по-русски, 2-4 коротких "
+    "предложения, тёпло и искренне, как живой человек. Отреагируй на "
+    "конкретное содержание отзыва. Если покупатель недоволен - искренне "
+    "посочувствуй, пойми его чувства и предложи написать нам в чат заказа, "
+    "мы постараемся помочь. Если доволен - порадуйся вместе с ним и "
+    "поблагодари. Не обещай возврат денег или компенсацию, не давай ссылок "
+    "и контактов, не используй шаблонные канцеляризмы. Не выдумывай "
+    "детали, которых нет в отзыве. В конце не подписывайся. Верни только "
+    "текст ответа."
+)
+LLM_MODEL = "claude-haiku-4-5-20251001"
+
+
+def generate_reply(rating: int, text: str, api_key: str | None) -> str:
+    """Персональный ответ через Claude API; при любой ошибке - шаблон."""
+    if not api_key:
+        return pick_reply(rating)
+    try:
+        response = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+            json={
+                "model": LLM_MODEL,
+                "max_tokens": 300,
+                "system": TONE_PROMPT,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Оценка: {rating} из 5.\n"
+                        f"Отзыв: {text or '(без текста, только оценка)'}",
+                    }
+                ],
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        reply = response.json()["content"][0]["text"].strip()
+        return reply or pick_reply(rating)
+    except (httpx.HTTPError, KeyError, IndexError, ValueError):
+        return pick_reply(rating)
+
+
 def pick_reply(rating: int, name: str = "") -> str:
     if rating >= 4:
         key = "positive"
@@ -93,12 +138,17 @@ class OzonReviewsClient:
         )
 
 
-def run(client: OzonReviewsClient, send: bool = False, pause: float = 0.5) -> int:
+def run(
+    client: OzonReviewsClient,
+    send: bool = False,
+    pause: float = 0.5,
+    llm_key: str | None = None,
+) -> int:
     handled = 0
     for review in client.list_unprocessed():
         review_id = review["id"]
         rating = int(review.get("rating", 5))
-        text = pick_reply(rating)
+        text = generate_reply(rating, review.get("text", ""), llm_key)
         print(f"[{review_id}] {rating}★ {review.get('text', '')[:80]!r}")
         print(f"    -> {text}")
         if send:
@@ -119,7 +169,11 @@ def main() -> None:
     api_key = os.environ.get("OZON_API_KEY")
     if not client_id or not api_key:
         raise SystemExit("Задайте OZON_CLIENT_ID и OZON_API_KEY в .env")
-    run(OzonReviewsClient(client_id, api_key), send=args.send)
+    run(
+        OzonReviewsClient(client_id, api_key),
+        send=args.send,
+        llm_key=os.environ.get("ANTHROPIC_API_KEY"),
+    )
 
 
 if __name__ == "__main__":
