@@ -1,17 +1,31 @@
 /**
- * OZON FBO — версия 2.3.1: чистая рабочая версия
+ * OZON FBO — версия 2.4.0
  *
  * B2 — Client-Id
  * B3 — основной Seller API-ключ
+ * B5 — период продаж, дней
+ * B6 — целевой запас, дней
+ * B7 — коэффициент продаж
  *
- * В этой версии проблемный метод /v3/product/info/list НЕ используется.
+ * Метод /v3/product/info/list не используется. Названия товаров берутся
+ * из отправлений и отчёта об остатках на складах.
+ *
+ * Ручные правки в «Поставить» (лист «Поставка FBO») и в «План»
+ * (лист «Продажи по кластерам») сохраняются при обновлении.
+ * Такие ячейки подсвечены оранжевым. Чтобы вернуть автоматический
+ * расчёт, очистите ячейку или выберите «Сбросить ручные правки».
  */
 
-const APP_VERSION = '2.3.11';
+const APP_VERSION = '2.4.0';
 
 let BATCH_MODE = false;
 let BATCH_ERROR = null;
 let BUILD_MODE = false;
+
+// Кэши живут только в пределах одного запуска скрипта.
+let CREDENTIALS_CACHE = null;
+const CLUSTER_LIST_CACHE = {};
+const POSTINGS_CACHE = {};
 
 const OZON = {
   SHEET: 'Поставка FBO',
@@ -26,7 +40,12 @@ const OZON = {
   SALES_DAYS_CELL: 'B5',
   STOCK_DAYS_CELL: 'B6',
   SALES_COEFFICIENT_CELL: 'B7',
-  BASE_URL: 'https://api-seller.ozon.ru'
+  BASE_URL: 'https://api-seller.ozon.ru',
+  PUT_COLUMN: 9,
+  CLUSTER_DATA_START_ROW: 5,
+  AUTO_PLAN_COLOR: '#fff2cc',
+  MANUAL_PLAN_COLOR: '#f9cb9c',
+  LOG_MAX_ROWS: 3000
 };
 
 function onOpen() {
@@ -35,6 +54,15 @@ function onOpen() {
     .addItem('1. Создать таблицы', 'createTables')
     .addItem('2. Обновить данные', 'updateEverything')
     .addItem('3. Собрать план поставок', 'collectSupplyPlan')
+    .addSeparator()
+    .addSubMenu(
+      SpreadsheetApp.getUi()
+        .createMenu('Сервис')
+        .addItem('Сбросить ручные правки плана', 'resetManualPlan')
+        .addItem('Проверить API-ключ', 'checkApiKeys')
+        .addItem('Последняя запись лога', 'showLastLog')
+        .addItem('Версия скрипта', 'showVersion')
+    )
     .addToUi();
 }
 
@@ -137,7 +165,8 @@ function setupMainSheet_(sh, clientId, apiKey, salesDays, stockDays, coefficient
     .setBackground('#d9eaf7');
 
   sh.getRange('B2:B7').setBackground('#fff2cc');
-  sh.getRange('B5:B7').setNumberFormat('0.00');
+  sh.getRange('B5:B6').setNumberFormat('0');
+  sh.getRange('B7').setNumberFormat('0.00');
 
   sh.getRange('A8:I8').setValues([[
     'Артикул',
@@ -168,11 +197,22 @@ function setupMainSheet_(sh, clientId, apiKey, salesDays, stockDays, coefficient
 
   sh.getRange('A2:B7').setBorder(true, true, true, true, true, true);
   sh.getRange('A8:I8').setBorder(true, true, true, true, true, true);
-  sh.getRange('I9:I').setBackground('#fff2cc');
+  sh.getRange('I9:I').setBackground(OZON.AUTO_PLAN_COLOR);
   sh.getRange('G9:G').setBackground('#d9eaf7');
 
   sh.getRange('B5').setNote('Берутся последние полные дни. Сегодняшний день не учитывается.');
-  sh.getRange('B7').setNote('Продажи за выбранный период умножаются на этот коэффициент.');
+  sh.getRange('B6').setNote(
+    'На сколько дней продаж должно хватить остатка вместе с товаром в пути.\n' +
+    'Рекомендация = продажи в день × B6 − остаток − в пути.'
+  );
+  sh.getRange('B7').setNote(
+    'Продажи за выбранный период умножаются на этот коэффициент ' +
+    '(например, 1.2 — ожидаем рост на 20%).'
+  );
+  sh.getRange('I8').setNote(
+    'Можно править вручную: ручное значение подсвечивается оранжевым ' +
+    'и сохраняется при обновлении. Очистите ячейку, чтобы вернуть авторасчёт.'
+  );
 }
 
 function updateEverything() {
@@ -319,13 +359,12 @@ function runRefreshStep_(callback) {
 }
 
 function showVersion() {
-  SpreadsheetApp.getUi().alert(
-    'Установлена версия: ' + APP_VERSION +
-    '\nПроблемный /v3/product/info/list в этой версии отсутствует.'
-  );
+  SpreadsheetApp.getUi().alert('Установлена версия: ' + APP_VERSION);
 }
 
 function getCredentials_() {
+  if (CREDENTIALS_CACHE) return CREDENTIALS_CACHE;
+
   const sh = getMainSheet_();
 
   const clientId = String(
@@ -344,9 +383,39 @@ function getCredentials_() {
     throw new Error('Не заполнен основной API-ключ в B3.');
   }
 
-  return {
+  CREDENTIALS_CACHE = {
     clientId: clientId,
     mainKey: mainKey
+  };
+  return CREDENTIALS_CACHE;
+}
+
+/**
+ * Настройки планирования с листа «Поставка FBO».
+ * Продажи в таблицах уже умножены на коэффициент, поэтому здесь
+ * коэффициент нужен только для подписи и загрузки продаж.
+ */
+function getPlanningSettings_(sh) {
+  return {
+    salesDays: Math.max(1, Number(sh.getRange(OZON.SALES_DAYS_CELL).getValue()) || 30),
+    stockDays: Math.max(1, Number(sh.getRange(OZON.STOCK_DAYS_CELL).getValue()) || 30),
+    coefficient: getSalesCoefficient_(sh)
+  };
+}
+
+/**
+ * Единый расчёт для основного листа и кластерной таблицы.
+ * sales — продажи за период с учётом коэффициента.
+ */
+function computeSupplyPlan_(sales, stock, transit, settings, offerId, name) {
+  const avgPerDay = Math.max(0, Number(sales) || 0) / settings.salesDays;
+  const available = Math.max(0, Number(stock) || 0) + Math.max(0, Number(transit) || 0);
+  const need = avgPerDay * settings.stockDays - available;
+
+  return {
+    avgPerDay: avgPerDay,
+    daysStock: avgPerDay > 0 ? available / avgPerDay : (available > 0 ? 999 : 0),
+    plan: roundSupplyQuantity_(need, offerId, name)
   };
 }
 
@@ -394,13 +463,16 @@ function checkApiKeys() {
  *
  * Записывает:
  * A — offer_id;
- * B — временно пустое название;
+ * B — название, если оно уже было известно по прошлым загрузкам;
  * C — product_id.
+ *
+ * Ручные значения в «Поставить» переносятся по offer_id.
  */
 function loadProducts(silent) {
   try {
     const sh = getMainSheet_();
     const credentials = getCredentials_();
+    const previous = readMainSheetState_(sh);
 
     const catalog = [];
     let lastId = '';
@@ -434,7 +506,7 @@ function loadProducts(silent) {
 
         catalog.push([
           offerId,
-          '',
+          previous.names[offerId] || '',
           productId
         ]);
       });
@@ -474,6 +546,7 @@ function loadProducts(silent) {
       3
     ).setValues(catalog);
 
+    restoreManualPutValues_(sh, catalog, previous.manualPut);
     applyCalculationFormulas_(sh, catalog.length);
 
     log_(
@@ -534,7 +607,7 @@ function updateStocks(silent) {
 
     const stocksByOffer = {};
 
-    chunk_(offerIds, 100).forEach(function(batch, batchIndex) {
+    chunk_(offerIds, 100).forEach(function(batch) {
       const response = ozonRequest_(
         '/v4/product/info/stocks',
         {
@@ -548,14 +621,6 @@ function updateStocks(silent) {
       );
 
       const items = extractStockItems_(response);
-
-      log_(
-        'Остатки FBO — пачка',
-        'INFO',
-        'Пачка ' + (batchIndex + 1) +
-        ': отправлено offer_id=' + batch.length +
-        ', получено items=' + items.length
-      );
 
       items.forEach(function(item) {
         const offerId = String(
@@ -722,70 +787,9 @@ function chunk_(arr, size) {
 
 
 /**
- * Берёт первое FBO-отправление и сохраняет его реальные данные
- * на отдельный лист «Диагностика analytics».
- */
-function showAnalyticsData() {
-  try {
-    const c=getCredentials_();
-    const sh=getMainSheet_();
-    const days=Math.max(1,Number(sh.getRange(OZON.SALES_DAYS_CELL).getValue())||30);
-    const d2=new Date();
-    const d1=new Date(d2); d1.setDate(d1.getDate()-days);
-
-    const payload={
-      dir:"ASC",
-      filter:{since:toIso_(d1),to:toIso_(d2)},
-      limit:1,
-      offset:0,
-      translit:true,
-      with:{analytics_data:true,financial_data:false}
-    };
-
-    const resp=UrlFetchApp.fetch(
-      OZON.BASE_URL+"/v3/posting/fbo/list",
-      {
-        method:"post",
-        contentType:"application/json",
-        headers:{
-          "Client-Id":c.clientId,
-          "Api-Key":c.mainKey
-        },
-        payload:JSON.stringify(payload),
-        muteHttpExceptions:true
-      }
-    );
-
-    const ss=SpreadsheetApp.getActive();
-    let ds=ss.getSheetByName("RAW API");
-    if(!ds) ds=ss.insertSheet("RAW API");
-    ds.clear();
-
-    ds.getRange(1,1,6,2).setValues([
-      ["Версия",APP_VERSION],
-      ["HTTP",resp.getResponseCode()],
-      ["URL","/v3/posting/fbo/list"],
-      ["Payload",JSON.stringify(payload)],
-      ["Headers","Client-Id скрыт, Api-Key скрыт"],
-      ["RAW JSON",resp.getContentText()]
-    ]);
-    ds.getRange("B:B").setWrap(true);
-    ds.setColumnWidth(2,1000);
-
-    SpreadsheetApp.getUi().alert("Готово. Открой лист RAW API и пришли содержимое ячейки B6.");
-  } catch(e){
-    handleError_("RAW API",e);
-  }
-}
-
-/**
- * Диагностический этап: продажи по кластерам.
- *
- * Создаёт отдельный лист «Продажи по кластерам».
- * Основной лист и существующие остатки не меняет.
- *
- * Кластер определяется по данным analytics_data в таком порядке:
- * cluster_to → cluster_name → region → city → warehouse_name.
+ * Первичное построение листа «Продажи по кластерам» (только при создании таблиц).
+ * Даёт updateClusterStocks() список кластеров в заголовке.
+ * Кластер продажи определяется по analytics_data.warehouse_id.
  */
 function updateClusterSales(silent) {
   try {
@@ -862,109 +866,43 @@ function updateClusterSales(silent) {
     const range = getCompletedSalesRange_(days);
     const dateFrom = range.dateFrom;
     const dateTo = range.dateTo;
-    const coefficient = getSalesCoefficient_(mainSheet);
 
     const salesByOffer = {};
     const unknownWarehouses = {};
+    const postings = fetchFboPostings_(credentials.mainKey, dateFrom, dateTo);
+    const postingCount = postings.length;
 
-    let cursor = '';
-    let page = 0;
-    let postingCount = 0;
+    postings.forEach(function(posting) {
+      const analytics = posting.analytics_data || {};
+      const warehouseId = String(analytics.warehouse_id || '').trim();
+      const warehouseName = String(analytics.warehouse_name || '').trim();
+      const clusterName = warehouseToCluster[warehouseId] || '';
 
-    do {
-      page++;
-
-      const payload = {
-        dir: 'ASC',
-        filter: {
-          since: toIso_(dateFrom),
-          to: toIso_(dateTo)
-        },
-        limit: 100,
-        translit: true,
-        with: {
-          analytics_data: true,
-          financial_data: false
-        }
-      };
-
-      if (cursor) {
-        payload.cursor = cursor;
+      if (!clusterName) {
+        const key = warehouseId || warehouseName || 'неизвестный склад';
+        unknownWarehouses[key] = warehouseName || warehouseId;
+        return;
       }
 
-      const response = ozonRequest_(
-        '/v3/posting/fbo/list',
-        payload,
-        credentials.mainKey
-      );
-
-      const postings = Array.isArray(response.postings)
-        ? response.postings
+      const products = Array.isArray(posting.products)
+        ? posting.products
         : [];
 
-      postingCount += postings.length;
+      products.forEach(function(product) {
+        const offerId = String(product.offer_id || '').trim();
 
-      postings.forEach(function(posting) {
-        const status = String(posting.status || '').toLowerCase();
+        if (!offerId || !knownOffers[offerId]) return;
 
-        if (
-          status.indexOf('cancel') !== -1 ||
-          status.indexOf('отмен') !== -1
-        ) {
-          return;
+        const quantity = Math.max(0, Number(product.quantity || 0));
+
+        if (!salesByOffer[offerId]) {
+          salesByOffer[offerId] = {};
         }
 
-        const analytics = posting.analytics_data || {};
-        const warehouseId = String(analytics.warehouse_id || '').trim();
-        const warehouseName = String(analytics.warehouse_name || '').trim();
-        const clusterName = warehouseToCluster[warehouseId] || '';
-
-        if (!clusterName) {
-          const key = warehouseId || warehouseName || 'неизвестный склад';
-          unknownWarehouses[key] = warehouseName || warehouseId;
-          return;
-        }
-
-        const products = Array.isArray(posting.products)
-          ? posting.products
-          : [];
-
-        products.forEach(function(product) {
-          const offerId = String(product.offer_id || '').trim();
-
-          if (!offerId || !knownOffers[offerId]) return;
-
-          const quantity = Math.max(0, Number(product.quantity || 0));
-
-          if (!salesByOffer[offerId]) {
-            salesByOffer[offerId] = {};
-          }
-
-          salesByOffer[offerId][clusterName] =
-            (salesByOffer[offerId][clusterName] || 0) + quantity;
-        });
+        salesByOffer[offerId][clusterName] =
+          (salesByOffer[offerId][clusterName] || 0) + quantity;
       });
-
-      const hasNext = Boolean(response.has_next);
-      const nextCursor = String(response.cursor || '').trim();
-
-      if (!hasNext || !nextCursor || postings.length === 0) {
-        break;
-      }
-
-      if (nextCursor === cursor) {
-        throw new Error('Ozon вернул тот же cursor повторно.');
-      }
-
-      cursor = nextCursor;
-      Utilities.sleep(250);
-
-      if (page >= 500) {
-        throw new Error(
-          'Загрузка остановлена после 500 страниц: защита от бесконечного цикла.'
-        );
-      }
-    } while (true);
+    });
 
     const ss = SpreadsheetApp.getActive();
     let sh = ss.getSheetByName(OZON.CLUSTER_SALES_SHEET);
@@ -1053,6 +991,8 @@ function updateClusterSales(silent) {
  * Проверяем только read-only варианты и берём первый принятый API.
  */
 function loadClusterList_(apiKey) {
+  if (CLUSTER_LIST_CACHE[apiKey]) return CLUSTER_LIST_CACHE[apiKey];
+
   const clusterTypes = [
     'CLUSTER_TYPE_OZON',
     'CLUSTER_TYPE_FBO',
@@ -1074,10 +1014,11 @@ function loadClusterList_(apiKey) {
         apiKey
       );
 
-      return {
+      CLUSTER_LIST_CACHE[apiKey] = {
         clusterType: clusterType,
         response: response
       };
+      return CLUSTER_LIST_CACHE[apiKey];
     } catch (error) {
       errors.push(
         clusterType + ': ' +
@@ -1330,36 +1271,8 @@ function flattenWarehouses_(items) {
   return result;
 }
 
-function extractClusterName_(analytics) {
-  if (!analytics || typeof analytics !== 'object') {
-    return '';
-  }
-
-  const candidates = [
-    analytics.cluster_to,
-    analytics.cluster_name,
-    analytics.region,
-    analytics.city,
-    analytics.warehouse_name
-  ];
-
-  for (let index = 0; index < candidates.length; index++) {
-    const value = String(candidates[index] || '').trim();
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return '';
-}
-
 /**
- * Получение FBO-отправлений за период.
- *
- * Исправлено:
- * response.result обычно является объектом,
- * а список лежит в response.result.postings.
+ * Период продаж: последние полные дни, сегодняшний день не учитывается.
  */
 function getCompletedSalesRange_(days) {
   const timezone = Session.getScriptTimeZone();
@@ -1383,6 +1296,70 @@ function getSalesCoefficient_(sh) {
     0.01,
     Number(sh.getRange(OZON.SALES_COEFFICIENT_CELL).getValue()) || 1
   );
+}
+
+/**
+ * Загружает FBO-отправления за период один раз за запуск скрипта.
+ * Основной лист и кластерная таблица используют одни и те же данные.
+ * Отменённые отправления отбрасываются сразу.
+ */
+function fetchFboPostings_(apiKey, dateFrom, dateTo) {
+  const cacheKey = toIso_(dateFrom) + '|' + toIso_(dateTo);
+  if (POSTINGS_CACHE[cacheKey]) return POSTINGS_CACHE[cacheKey];
+
+  const result = [];
+  let cursor = '';
+  let page = 0;
+
+  do {
+    page++;
+
+    const payload = {
+      dir: 'ASC',
+      filter: {
+        since: toIso_(dateFrom),
+        to: toIso_(dateTo)
+      },
+      limit: 100,
+      translit: true,
+      with: {
+        analytics_data: true,
+        financial_data: false
+      }
+    };
+
+    if (cursor) {
+      payload.cursor = cursor;
+    }
+
+    const response = ozonRequest_('/v3/posting/fbo/list', payload, apiKey);
+    const postings = Array.isArray(response.postings) ? response.postings : [];
+
+    postings.forEach(function(posting) {
+      const status = String(posting.status || '').toLowerCase();
+      if (status.indexOf('cancel') !== -1 || status.indexOf('отмен') !== -1) return;
+      result.push(posting);
+    });
+
+    const hasNext = Boolean(response.has_next);
+    const nextCursor = String(response.cursor || '').trim();
+
+    if (!hasNext || !nextCursor || postings.length === 0) break;
+
+    if (nextCursor === cursor) {
+      throw new Error('Ozon вернул тот же cursor повторно.');
+    }
+
+    cursor = nextCursor;
+    Utilities.sleep(250);
+
+    if (page >= 500) {
+      throw new Error('Загрузка отправлений остановлена после 500 страниц.');
+    }
+  } while (true);
+
+  POSTINGS_CACHE[cacheKey] = result;
+  return result;
 }
 
 function updateSales(silent) {
@@ -1410,90 +1387,30 @@ function updateSales(silent) {
       if (offerId) knownOffers[offerId] = true;
     });
 
-    const days = Math.max(
-      1,
-      Number(sh.getRange(OZON.SALES_DAYS_CELL).getValue()) || 30
-    );
-
-    const range = getCompletedSalesRange_(days);
-    const dateFrom = range.dateFrom;
-    const dateTo = range.dateTo;
-    const coefficient = getSalesCoefficient_(sh);
+    const settings = getPlanningSettings_(sh);
+    const range = getCompletedSalesRange_(settings.salesDays);
+    const postings = fetchFboPostings_(credentials.mainKey, range.dateFrom, range.dateTo);
 
     const sales = {};
-    let cursor = '';
-    let page = 0;
+    const names = {};
 
-    do {
-      page++;
+    postings.forEach(function(posting) {
+      const products = Array.isArray(posting.products) ? posting.products : [];
 
-      const payload = {
-        dir: 'ASC',
-        filter: {
-          since: toIso_(dateFrom),
-          to: toIso_(dateTo)
-        },
-        limit: 100,
-        translit: true,
-        with: {
-          analytics_data: false,
-          financial_data: false
-        }
-      };
+      products.forEach(function(product) {
+        const offerId = String(product.offer_id || '').trim();
+        if (!offerId || !knownOffers[offerId]) return;
 
-      if (cursor) {
-        payload.cursor = cursor;
-      }
+        sales[offerId] = (sales[offerId] || 0) + Math.max(0, Number(product.quantity || 0));
 
-      const response = ozonRequest_(
-        '/v3/posting/fbo/list',
-        payload,
-        credentials.mainKey
-      );
-
-      const postings = Array.isArray(response.postings)
-        ? response.postings
-        : [];
-
-      postings.forEach(function(posting) {
-        const status = String(posting.status || '').toLowerCase();
-
-        if (status.indexOf('cancel') !== -1) return;
-
-        const products = Array.isArray(posting.products)
-          ? posting.products
-          : [];
-
-        products.forEach(function(product) {
-          const offerId = String(product.offer_id || '').trim();
-
-          if (!offerId || !knownOffers[offerId]) return;
-
-          sales[offerId] =
-            (sales[offerId] || 0) + Number(product.quantity || 0);
-        });
+        const name = String(product.name || '').trim();
+        if (name && !names[offerId]) names[offerId] = name;
       });
-
-      const hasNext = Boolean(response.has_next);
-      const nextCursor = String(response.cursor || '').trim();
-
-      if (!hasNext || !nextCursor || postings.length === 0) break;
-
-      if (nextCursor === cursor) {
-        throw new Error('Ozon вернул тот же cursor повторно.');
-      }
-
-      cursor = nextCursor;
-      Utilities.sleep(250);
-
-      if (page >= 500) {
-        throw new Error('Загрузка остановлена после 500 страниц.');
-      }
-    } while (true);
+    });
 
     const values = offerRows.map(function(row) {
       const offerId = String(row[0] || '').trim();
-      return [Math.round((sales[offerId] || 0) * coefficient)];
+      return [Math.round((sales[offerId] || 0) * settings.coefficient)];
     });
 
     sh.getRange(
@@ -1503,20 +1420,19 @@ function updateSales(silent) {
       1
     ).setValues(values);
 
+    const filledNames = fillMissingNames_(sh, names);
     applyCalculationFormulas_(sh, rowCount);
 
-    log_(
-      'Обновление продаж',
-      'OK',
-      'Продажи обновлены за ' + days +
-      ' полных дней, коэффициент: ' + coefficient + '.'
-    );
+    const message =
+      'Продажи обновлены за ' + settings.salesDays +
+      ' полных дней, коэффициент: ' + settings.coefficient +
+      '. Отправлений: ' + postings.length +
+      '. Добавлено названий: ' + filledNames + '.';
+
+    log_('Обновление продаж', 'OK', message);
 
     if (!silent) {
-      SpreadsheetApp.getUi().alert(
-        'Продажи обновлены за ' + days +
-        ' полных дней, коэффициент: ' + coefficient + '.'
-      );
+      SpreadsheetApp.getUi().alert(message);
     }
   } catch (error) {
     handleError_('Обновление продаж', error);
@@ -1524,8 +1440,8 @@ function updateSales(silent) {
 }
 
 /**
- * Формулы ставятся только в вычисляемые столбцы F и H.
- * Столбец I больше не перезаписывается — его можно править вручную.
+ * Правила кратности поставки по типу товара.
+ * Тип определяется по артикулу и, если оно известно, по названию.
  */
 function normalizeSupplyText_(value) {
   return String(value || '').trim().toUpperCase();
@@ -1562,7 +1478,8 @@ function isSet_(offerId, name) {
 }
 
 function roundSupplyQuantity_(quantity, offerId, name) {
-  const value = Math.max(0, Math.ceil(Number(quantity) || 0));
+  // Маленький допуск убирает ошибки округления вида 3.0000000001 → 4.
+  const value = Math.max(0, Math.ceil((Number(quantity) || 0) - 1e-9));
 
   // Эти серии пока не поставляем.
   if (isSupplyExcluded_(offerId, name)) {
@@ -1622,15 +1539,7 @@ function applyCalculationFormulas_(sh, rowCount) {
 
   // Считаем значения в Apps Script, а не формулами Google Sheets.
   // Так расчёт не зависит от локали таблицы и не даёт #ERROR!.
-  const salesDays = Math.max(
-    1,
-    Number(sh.getRange(OZON.SALES_DAYS_CELL).getValue()) || 30
-  );
-  const coefficient = Math.max(
-    0.01,
-    Number(sh.getRange(OZON.SALES_COEFFICIENT_CELL).getValue()) || 1
-  );
-  const forecastPeriodDays = salesDays * coefficient;
+  const settings = getPlanningSettings_(sh);
 
   const source = sh.getRange(
     OZON.DATA_START_ROW,
@@ -1638,54 +1547,184 @@ function applyCalculationFormulas_(sh, rowCount) {
     rowCount,
     9
   ).getValues();
+  const putRange = sh.getRange(OZON.DATA_START_ROW, OZON.PUT_COLUMN, rowCount, 1);
+  const putBackgrounds = putRange.getBackgrounds();
 
   const avgValues = [];
   const recommendationValues = [];
   const putValues = [];
+  const newPutBackgrounds = [];
 
-  source.forEach(function(row) {
+  source.forEach(function(row, index) {
     const offerId = String(row[0] || '').trim();
     const name = String(row[1] || '').trim();
-    const stock = Math.max(0, Number(row[3]) || 0);
-    const sales = Math.max(0, Number(row[4]) || 0);
-    const inTransit = Math.max(0, Number(row[6]) || 0);
+    const oldPut = row[8];
+    const isManual = isManualColor_(putBackgrounds[index][0]) && oldPut !== '';
 
     if (!offerId) {
       avgValues.push(['']);
       recommendationValues.push(['']);
       putValues.push(['']);
+      newPutBackgrounds.push([OZON.AUTO_PLAN_COLOR]);
       return;
     }
 
-    const avgPerDay = sales / forecastPeriodDays;
-    const recommendation = roundSupplyQuantity_(
-      sales - stock - inTransit,
-      offerId,
-      name
-    );
+    const result = computeSupplyPlan_(row[4], row[3], row[6], settings, offerId, name);
 
-    avgValues.push([avgPerDay]);
-    recommendationValues.push([recommendation]);
+    avgValues.push([result.avgPerDay]);
+    recommendationValues.push([result.plan]);
 
-    // При каждом обновлении итоговый план пересчитывается заново,
-    // чтобы новые остатки и товары в пути сразу учитывались.
-    putValues.push([recommendation]);
+    // Ручное значение пользователя не трогаем, остальное пересчитываем.
+    putValues.push([isManual ? oldPut : result.plan]);
+    newPutBackgrounds.push([isManual ? OZON.MANUAL_PLAN_COLOR : OZON.AUTO_PLAN_COLOR]);
   });
 
   sh.getRange(OZON.DATA_START_ROW, 6, rowCount, 1)
-    .clearContent()
     .setValues(avgValues)
     .setNumberFormat('0.00');
 
   sh.getRange(OZON.DATA_START_ROW, 8, rowCount, 1)
-    .clearContent()
     .setValues(recommendationValues)
     .setNumberFormat('0');
 
-  sh.getRange(OZON.DATA_START_ROW, 9, rowCount, 1)
-    .clearContent()
+  putRange
     .setValues(putValues)
+    .setBackgrounds(newPutBackgrounds)
     .setNumberFormat('0');
+}
+
+function isManualColor_(color) {
+  return String(color || '').toLowerCase() === OZON.MANUAL_PLAN_COLOR;
+}
+
+/**
+ * Запоминает названия и ручные значения «Поставить» по offer_id,
+ * чтобы перенести их после перезагрузки каталога.
+ */
+function readMainSheetState_(sh) {
+  const state = {names: {}, manualPut: {}};
+  const lastRow = getLastProductRow_(sh);
+  if (lastRow < OZON.DATA_START_ROW) return state;
+
+  const rowCount = lastRow - OZON.DATA_START_ROW + 1;
+  const values = sh.getRange(OZON.DATA_START_ROW, 1, rowCount, 9).getValues();
+  const backgrounds = sh.getRange(OZON.DATA_START_ROW, OZON.PUT_COLUMN, rowCount, 1).getBackgrounds();
+
+  values.forEach(function(row, index) {
+    const offerId = String(row[0] || '').trim();
+    if (!offerId) return;
+
+    const name = String(row[1] || '').trim();
+    if (name) state.names[offerId] = name;
+
+    if (isManualColor_(backgrounds[index][0]) && row[8] !== '') {
+      state.manualPut[offerId] = row[8];
+    }
+  });
+
+  return state;
+}
+
+function restoreManualPutValues_(sh, catalog, manualPut) {
+  const allRows = Math.max(1, sh.getMaxRows() - OZON.DATA_START_ROW + 1);
+  sh.getRange(OZON.DATA_START_ROW, OZON.PUT_COLUMN, allRows, 1)
+    .setBackground(OZON.AUTO_PLAN_COLOR);
+
+  if (!catalog.length) return;
+
+  const values = [];
+  const backgrounds = [];
+  catalog.forEach(function(row) {
+    const offerId = String(row[0] || '').trim();
+    const isManual = Object.prototype.hasOwnProperty.call(manualPut, offerId);
+    values.push([isManual ? manualPut[offerId] : '']);
+    backgrounds.push([isManual ? OZON.MANUAL_PLAN_COLOR : OZON.AUTO_PLAN_COLOR]);
+  });
+
+  sh.getRange(OZON.DATA_START_ROW, OZON.PUT_COLUMN, catalog.length, 1)
+    .setValues(values)
+    .setBackgrounds(backgrounds);
+}
+
+/** Заполняет пустые названия в столбце B по найденным в API данным. */
+function fillMissingNames_(sh, namesByOffer) {
+  const lastRow = getLastProductRow_(sh);
+  if (lastRow < OZON.DATA_START_ROW || !namesByOffer) return 0;
+
+  const rowCount = lastRow - OZON.DATA_START_ROW + 1;
+  const range = sh.getRange(OZON.DATA_START_ROW, 1, rowCount, 2);
+  const values = range.getValues();
+  let filled = 0;
+
+  const names = values.map(function(row) {
+    const offerId = String(row[0] || '').trim();
+    const current = String(row[1] || '').trim();
+    if (!current && offerId && namesByOffer[offerId]) {
+      filled++;
+      return [namesByOffer[offerId]];
+    }
+    return [row[1]];
+  });
+
+  if (filled) {
+    sh.getRange(OZON.DATA_START_ROW, 2, rowCount, 1).setValues(names);
+  }
+
+  return filled;
+}
+
+/** Сбрасывает все ручные правки: «Поставить» и «План» снова считаются автоматически. */
+function resetManualPlan() {
+  const ui = SpreadsheetApp.getUi();
+  const answer = ui.alert(
+    'Сбросить ручные правки?',
+    'Все оранжевые ячейки «Поставить» и «План» будут пересчитаны автоматически.',
+    ui.ButtonSet.YES_NO
+  );
+  if (answer !== ui.Button.YES) return;
+
+  try {
+    const main = getMainSheet_();
+    const allRows = Math.max(1, main.getMaxRows() - OZON.DATA_START_ROW + 1);
+    main.getRange(OZON.DATA_START_ROW, OZON.PUT_COLUMN, allRows, 1)
+      .setBackground(OZON.AUTO_PLAN_COLOR);
+
+    const lastRow = getLastProductRow_(main);
+    if (lastRow >= OZON.DATA_START_ROW) {
+      applyCalculationFormulas_(main, lastRow - OZON.DATA_START_ROW + 1);
+    }
+
+    const sh = SpreadsheetApp.getActive().getSheetByName(OZON.CLUSTER_SALES_SHEET);
+    let clusterCells = 0;
+    if (sh && sh.getLastRow() >= OZON.CLUSTER_DATA_START_ROW) {
+      const settings = getPlanningSettings_(main);
+      const rowCount = sh.getLastRow() - OZON.CLUSTER_DATA_START_ROW + 1;
+      getClusterPlanColumns_(sh).forEach(function(col) {
+        const salesCol = col - 4;
+        const data = sh.getRange(OZON.CLUSTER_DATA_START_ROW, 1, rowCount, 2).getValues();
+        const block = sh.getRange(OZON.CLUSTER_DATA_START_ROW, salesCol, rowCount, 5).getValues();
+        const planRange = sh.getRange(OZON.CLUSTER_DATA_START_ROW, col, rowCount, 1);
+        const backgrounds = planRange.getBackgrounds();
+        const values = planRange.getValues();
+
+        block.forEach(function(row, index) {
+          if (!isManualColor_(backgrounds[index][0])) return;
+          const offerId = String(data[index][0] || '').trim();
+          values[index][0] = offerId
+            ? computeSupplyPlan_(row[0], row[1], row[2], settings, offerId, data[index][1]).plan
+            : '';
+          backgrounds[index][0] = OZON.AUTO_PLAN_COLOR;
+          clusterCells++;
+        });
+
+        planRange.setValues(values).setBackgrounds(backgrounds);
+      });
+    }
+
+    ui.alert('Ручные правки сброшены. Ячеек в кластерной таблице: ' + clusterCells + '.');
+  } catch (error) {
+    handleError_('Сброс ручных правок', error);
+  }
 }
 
 function clearProductData() {
@@ -1727,31 +1766,34 @@ function clearDataArea_(sh) {
 
 function ozonRequest_(path, body, apiKey) {
   const credentials = getCredentials_();
-
   const requestBody = body || {};
-
-  log_(
-    'HTTP запрос',
-    'INFO',
-    path + ' | body=' + safeJson_(requestBody)
-  );
-
-  const response = fetchWithRetry_(
-    OZON.BASE_URL + path,
-    {
-      method: 'post',
-      contentType: 'application/json',
-      headers: {
-        'Client-Id': credentials.clientId,
-        'Api-Key': apiKey
-      },
-      payload: JSON.stringify(requestBody),
-      muteHttpExceptions: true
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'Client-Id': credentials.clientId,
+      'Api-Key': apiKey
     },
-    path
-  );
+    payload: JSON.stringify(requestBody),
+    muteHttpExceptions: true
+  };
 
-  const code = response.getResponseCode();
+  // Каждый запрос больше не пишется в лог: это замедляло обновление
+  // и раздувало лист «Лог». В лог попадают только ошибки и итоги операций.
+  // При превышении лимита запросов (HTTP 429) ждём и повторяем.
+  const rateLimitDelays = [2000, 5000, 10000];
+  let response;
+  let code;
+
+  for (let attempt = 0; ; attempt++) {
+    response = fetchWithRetry_(OZON.BASE_URL + path, options, path);
+    code = response.getResponseCode();
+    if (code !== 429 || attempt >= rateLimitDelays.length) break;
+
+    log_('Лимит запросов Ozon', 'WARN', path + ': HTTP 429, повтор через ' + rateLimitDelays[attempt] / 1000 + ' с');
+    Utilities.sleep(rateLimitDelays[attempt]);
+  }
+
   const text = response.getContentText();
 
   let json;
@@ -1782,6 +1824,7 @@ function ozonRequest_(path, body, apiKey) {
       path +
       ' | HTTP ' +
       code +
+      ' | body=' + safeJson_(requestBody).slice(0, 300) +
       ' | ' +
       String(message).slice(0, 800)
     );
@@ -1895,8 +1938,14 @@ function log_(operation, status, message) {
     new Date(),
     operation,
     status,
-    message
+    String(message).slice(0, 5000)
   ]);
+
+  // Храним только последние записи, чтобы лог не рос бесконечно.
+  const extra = sh.getLastRow() - 1 - OZON.LOG_MAX_ROWS;
+  if (extra > 0) {
+    sh.deleteRows(2, extra);
+  }
 }
 
 function showLastLog() {
@@ -1971,74 +2020,59 @@ function loadClusterSalesData_(mainSheet, apiKey, clusters) {
   const clusterInfo = parseClusters_(clusterResult.response);
   const warehouseToCluster = clusterInfo.warehouseToCluster;
 
-  const days = Math.max(
-    1,
-    Number(mainSheet.getRange(OZON.SALES_DAYS_CELL).getValue()) || 30
-  );
-
-  const range = getCompletedSalesRange_(days);
-  const dateFrom = range.dateFrom;
-  const dateTo = range.dateTo;
-  const coefficient = getSalesCoefficient_(mainSheet);
+  const settings = getPlanningSettings_(mainSheet);
+  const range = getCompletedSalesRange_(settings.salesDays);
+  const postings = fetchFboPostings_(apiKey, range.dateFrom, range.dateTo);
 
   const allowedClusters = {};
   clusters.forEach(function(cluster) { allowedClusters[cluster] = true; });
 
   const salesByOffer = {};
-  let cursor = '';
-  let page = 0;
+  const names = {};
+  let unmatchedQuantity = 0;
 
-  do {
-    page++;
-    const payload = {
-      dir: 'ASC',
-      filter: { since: toIso_(dateFrom), to: toIso_(dateTo) },
-      limit: 100,
-      translit: true,
-      with: { analytics_data: true, financial_data: false }
-    };
-    if (cursor) payload.cursor = cursor;
+  postings.forEach(function(posting) {
+    const analytics = posting.analytics_data || {};
+    const warehouseId = String(analytics.warehouse_id || '').trim();
+    const cluster = warehouseToCluster[warehouseId] || '';
+    const products = Array.isArray(posting.products) ? posting.products : [];
 
-    const response = ozonRequest_('/v3/posting/fbo/list', payload, apiKey);
-    const postings = Array.isArray(response.postings) ? response.postings : [];
+    products.forEach(function(product) {
+      const offerId = String(product.offer_id || '').trim();
+      if (!offerId) return;
+      const quantity = Math.max(0, Number(product.quantity || 0));
+      const name = String(product.name || '').trim();
+      if (name && !names[offerId]) names[offerId] = name;
 
-    postings.forEach(function(posting) {
-      const status = String(posting.status || '').toLowerCase();
-      if (status.indexOf('cancel') !== -1 || status.indexOf('отмен') !== -1) return;
+      if (!cluster || !allowedClusters[cluster]) {
+        unmatchedQuantity += quantity;
+        return;
+      }
 
-      const analytics = posting.analytics_data || {};
-      const warehouseId = String(analytics.warehouse_id || '').trim();
-      const cluster = warehouseToCluster[warehouseId] || '';
-      if (!cluster || !allowedClusters[cluster]) return;
-
-      const products = Array.isArray(posting.products) ? posting.products : [];
-      products.forEach(function(product) {
-        const offerId = String(product.offer_id || '').trim();
-        if (!offerId) return;
-        const quantity = Math.max(0, Number(product.quantity || 0));
-        if (!salesByOffer[offerId]) salesByOffer[offerId] = {};
-        salesByOffer[offerId][cluster] =
-          (salesByOffer[offerId][cluster] || 0) + quantity;
-      });
+      if (!salesByOffer[offerId]) salesByOffer[offerId] = {};
+      salesByOffer[offerId][cluster] =
+        (salesByOffer[offerId][cluster] || 0) + quantity;
     });
-
-    const nextCursor = String(response.cursor || '').trim();
-    if (!response.has_next || !nextCursor || postings.length === 0) break;
-    if (nextCursor === cursor) throw new Error('Ozon вернул тот же cursor повторно.');
-    cursor = nextCursor;
-    Utilities.sleep(250);
-    if (page >= 500) throw new Error('Продажи: остановлено после 500 страниц.');
-  } while (true);
+  });
 
   Object.keys(salesByOffer).forEach(function(offerId) {
     Object.keys(salesByOffer[offerId]).forEach(function(cluster) {
       salesByOffer[offerId][cluster] = Math.round(
-        salesByOffer[offerId][cluster] * coefficient
+        salesByOffer[offerId][cluster] * settings.coefficient
       );
     });
   });
 
-  return salesByOffer;
+  if (unmatchedQuantity > 0) {
+    log_(
+      'Продажи без кластера',
+      'INFO',
+      'Штук без определённого кластера: ' + unmatchedQuantity +
+      '. Они есть на основном листе, но не попали в кластерную таблицу.'
+    );
+  }
+
+  return {salesByOffer: salesByOffer, names: names};
 }
 
 /**
@@ -2095,8 +2129,8 @@ function updateClusterStocks(silent) {
     const oldStride = hasTransitColumn ? 5 : (hasDaysColumn ? 4 : 3);
 
     const clusters = [];
-    const salesByOffer = {};
-    const planByOffer = {};
+    // Ручные значения «План» (оранжевые ячейки): offerId -> кластер -> значение.
+    const manualPlanByOffer = {};
 
     if (isUnified) {
       for (let col = 5; col <= lastSheetCol; col += oldStride) {
@@ -2105,20 +2139,18 @@ function updateClusterStocks(silent) {
       }
 
       const dataRows = Math.max(0, sh.getLastRow() - dataStartRow + 1);
-      if (dataRows) {
+      if (dataRows && oldStride === 5) {
         const values = sh.getRange(dataStartRow, 1, dataRows, lastSheetCol).getValues();
-        values.forEach(function(row) {
+        const backgrounds = sh.getRange(dataStartRow, 1, dataRows, lastSheetCol).getBackgrounds();
+        values.forEach(function(row, rowIndex) {
           const offerId = String(row[0] || '').trim();
           if (!offerId) return;
-          salesByOffer[offerId] = {};
-          planByOffer[offerId] = {};
           clusters.forEach(function(cluster, index) {
-            const base = 4 + index * oldStride;
-            salesByOffer[offerId][cluster] = Number(row[base] || 0);
-            const planOffset = oldStride === 5 ? 4 : (oldStride === 4 ? 3 : 2);
-            planByOffer[offerId][cluster] = row[base + planOffset] === ''
-              ? ''
-              : Number(row[base + planOffset] || 0);
+            const planIndex = 4 + index * oldStride + 4;
+            if (isManualColor_(backgrounds[rowIndex][planIndex]) && row[planIndex] !== '') {
+              if (!manualPlanByOffer[offerId]) manualPlanByOffer[offerId] = {};
+              manualPlanByOffer[offerId][cluster] = row[planIndex];
+            }
           });
         });
       }
@@ -2133,11 +2165,12 @@ function updateClusterStocks(silent) {
       throw new Error('Не удалось прочитать названия кластеров.');
     }
 
-    // Всегда заново загружаем продажи из API.
+    // Продажи всегда берутся только из свежего ответа API.
+    // Старые значения с листа не переносятся, иначе товар без продаж
+    // за новый период сохранил бы устаревшие цифры.
     const freshSales = loadClusterSalesData_(mainSheet, credentials.mainKey, clusters);
-    Object.keys(freshSales).forEach(function(offerId) {
-      salesByOffer[offerId] = freshSales[offerId];
-    });
+    const salesByOffer = freshSales.salesByOffer;
+    const apiNames = freshSales.names;
 
     const rowCount = lastRow - OZON.DATA_START_ROW + 1;
     const catalogRows = mainSheet.getRange(OZON.DATA_START_ROW, 1, rowCount, 3).getDisplayValues();
@@ -2151,6 +2184,7 @@ function updateClusterStocks(silent) {
       const productId = String(row[2] || '').trim();
       if (!offerId) return;
       catalog.push({offerId: offerId, name: name, productId: productId});
+      if (name) apiNames[offerId] = name;
       offerLookup[normalizeKey_(offerId)] = offerId;
       if (productId) skuLookup[normalizeKey_(productId)] = offerId;
     });
@@ -2181,6 +2215,9 @@ function updateClusterStocks(silent) {
         const offerId = offerLookup[normalizeKey_(itemCode)] || skuLookup[normalizeKey_(sku)] || '';
         if (!offerId || !warehouseName) return;
 
+        const itemName = String(item.item_name || item.name || '').trim();
+        if (itemName && !apiNames[offerId]) apiNames[offerId] = itemName;
+
         const cluster = matchWarehouseToCluster_(warehouseName, clusters);
         if (!cluster) {
           unknownWarehouses[warehouseName] = true;
@@ -2208,47 +2245,41 @@ function updateClusterStocks(silent) {
     // Лист «Поставки в пути» уже обновлён в refreshEverything().
     const transitByOffer = loadTransitByOfferCluster_(clusters);
 
-    const salesDays = Math.max(
-      1,
-      Number(mainSheet.getRange(OZON.SALES_DAYS_CELL).getValue()) || 30
-    );
-    const coefficient = Math.max(
-      0.01,
-      Number(mainSheet.getRange(OZON.SALES_COEFFICIENT_CELL).getValue()) || 1
-    );
-    const forecastPeriodDays = salesDays * coefficient;
+    // Названия, найденные в отправлениях и отчёте об остатках,
+    // дописываем в основной лист, чтобы они сохранились до следующего раза.
+    fillMissingNames_(mainSheet, apiNames);
+
+    const settings = getPlanningSettings_(mainSheet);
     const stride = 5;
     const totalColumns = 4 + clusters.length * stride;
 
     const outputObjects = catalog.map(function(item) {
-      const row = [item.offerId, item.name, item.productId, 0];
+      const name = item.name || apiNames[item.offerId] || '';
+      const row = [item.offerId, name, item.productId, 0];
+      const manual = [];
       let totalSales = 0;
 
       clusters.forEach(function(cluster) {
         const sales = Number((salesByOffer[item.offerId] || {})[cluster] || 0);
         const stock = Number((stockByOffer[item.offerId] || {})[cluster] || 0);
         const transit = Number((transitByOffer[item.offerId] || {})[cluster] || 0);
-        const daysStock = sales > 0
-          ? (stock + transit) / (sales / forecastPeriodDays)
-          : ((stock + transit) > 0 ? 999 : 0);
+        const result = computeSupplyPlan_(sales, stock, transit, settings, item.offerId, name);
+        const manualPlans = manualPlanByOffer[item.offerId] || {};
+        const isManual = Object.prototype.hasOwnProperty.call(manualPlans, cluster);
 
-        const autoPlan = roundSupplyQuantity_(
-          sales - stock - transit,
-          item.offerId,
-          item.name
-        );
         totalSales += sales;
+        manual.push(isManual);
         row.push(
           sales,
           stock,
           transit,
-          daysStock,
-          autoPlan
+          result.daysStock,
+          isManual ? manualPlans[cluster] : result.plan
         );
       });
 
       row[3] = totalSales;
-      return {row: row, totalSales: totalSales, offerId: item.offerId, name: item.name};
+      return {row: row, manual: manual, totalSales: totalSales, offerId: item.offerId, name: name};
     });
 
     // По умолчанию сверху самые продаваемые товары.
@@ -2257,6 +2288,7 @@ function updateClusterStocks(silent) {
       return a.offerId.localeCompare(b.offerId, 'ru');
     });
     const output = outputObjects.map(function(item) { return item.row; });
+    const manualFlags = outputObjects.map(function(item) { return item.manual; });
 
     const structureIsReady =
       sh.getRange('A3').getDisplayValue() === 'Артикул' &&
@@ -2364,7 +2396,8 @@ function updateClusterStocks(silent) {
       sh.getRange(5, 1, output.length, 1).setFontWeight('bold');
       sh.getRange(5, 4, output.length, 1).setFontWeight('bold').setBackground('#e2f0d9');
 
-      // Подсветка дефицита/профицита по каждой паре продажи—остаток.
+      // Подсветка по дням запаса относительно целевого запаса из B6:
+      // красный — меньше цели, жёлтый — около цели (±10%), зелёный — больше.
       clusters.forEach(function(cluster, index) {
         const baseCol = 5 + index * stride;
         const salesStockBackgrounds = [];
@@ -2372,31 +2405,32 @@ function updateClusterStocks(silent) {
         const daysBackgrounds = [];
         const planBackgrounds = [];
 
-        output.forEach(function(row) {
+        output.forEach(function(row, rowIndex) {
           const sales = Number(row[baseCol - 1] || 0);
           const stock = Number(row[baseCol] || 0);
           const transit = Number(row[baseCol + 1] || 0);
+          const daysStock = Number(row[baseCol + 2] || 0);
           let color = '#f2f2f2';
-          let daysColor = '#f2f2f2';
 
-          if (sales > stock + transit) {
-            color = '#f4cccc';       // дефицит
-            daysColor = '#f4cccc';
-          } else if (stock + transit > sales && sales > 0) {
-            color = '#d9ead3';       // профицит
-            daysColor = '#d9ead3';
-          } else if (sales === stock + transit && sales > 0) {
-            color = '#fff2cc';       // на границе
-            daysColor = '#fff2cc';
-          } else if (sales === 0 && stock + transit > 0) {
+          if (sales > 0) {
+            if (daysStock < settings.stockDays * 0.9) {
+              color = '#f4cccc';     // дефицит
+            } else if (daysStock <= settings.stockDays * 1.1) {
+              color = '#fff2cc';     // около цели
+            } else {
+              color = '#d9ead3';     // профицит
+            }
+          } else if (stock + transit > 0) {
             color = '#d9ead3';
-            daysColor = '#d9ead3';
           }
+          const daysColor = color;
 
           salesStockBackgrounds.push([color, color]);
           transitBackgrounds.push([transit > 0 ? '#cfe2f3' : '#f2f2f2']);
           daysBackgrounds.push([daysColor]);
-          planBackgrounds.push(['#fff2cc']);
+          planBackgrounds.push([
+            manualFlags[rowIndex][index] ? OZON.MANUAL_PLAN_COLOR : OZON.AUTO_PLAN_COLOR
+          ]);
         });
 
         sh.getRange(5, baseCol, output.length, 2).setBackgrounds(salesStockBackgrounds);
@@ -2410,7 +2444,7 @@ function updateClusterStocks(silent) {
       // Тонкие горизонтальные линии и компактные строки.
       sh.getRange(5, 1, output.length, totalColumns)
         .setBorder(null, null, true, null, null, null, '#d9d9d9', SpreadsheetApp.BorderStyle.SOLID);
-      for (let r = 5; r < 5 + output.length; r++) sh.setRowHeight(r, 24);
+      sh.setRowHeights(5, output.length, 24);
     }
 
     sh.setFrozenRows(4);
@@ -2450,7 +2484,8 @@ function updateClusterStocks(silent) {
     if (!silent) {
       SpreadsheetApp.getUi().alert(
         'Готово. Таблица отсортирована по продажам.\n' +
-        'Красный — дефицит, зелёный — профицит, голубой — в пути, жёлтый — план.\n' +
+        'Красный — дефицит, зелёный — профицит, голубой — в пути, жёлтый — план, ' +
+        'оранжевый — ручная правка плана.\n' +
         'В B1 можно выбрать конкретный товар. Пустая B1 показывает все товары.'
       );
     }
@@ -2459,130 +2494,215 @@ function updateClusterStocks(silent) {
   }
 }
 
-function setupProductSelector_(ss, sh, outputObjects) {
-  const helperName = '_Справочник товаров';
-  let helper = ss.getSheetByName(helperName);
-  if (!helper) helper = ss.insertSheet(helperName);
-  helper.clear();
-
-  // В справочнике только реальные товары. Пустая B1 означает «показать все».
-  const labels = outputObjects.map(function(item) {
-    return [item.offerId + (item.name ? ' — ' + item.name : '')];
-  });
-
-  if (labels.length) {
-    helper.getRange(1, 1, labels.length, 1).setValues(labels);
-  }
-
-  const selectorCell = sh.getRange('B1');
-  selectorCell.clearDataValidations();
-  selectorCell.clearContent();
-  selectorCell.setNote('Оставьте ячейку пустой, чтобы показать все товары.');
-
-  if (labels.length) {
-    const rule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(helper.getRange(1, 1, labels.length, 1), true)
-      .setAllowInvalid(true)
-      .build();
-    selectorCell.setDataValidation(rule);
-  }
-
-  helper.hideSheet();
-}
-
 function onEdit(e) {
   try {
     if (!e || !e.range) return;
-    const sh = e.range.getSheet();
-    if (sh.getName() !== OZON.CLUSTER_SALES_SHEET || e.range.getA1Notation() !== 'B1') return;
-    applyProductSelector_(sh, String(e.value || ''));
+    const range = e.range;
+    const sh = range.getSheet();
+    const name = sh.getName();
+
+    if (name === OZON.CLUSTER_SALES_SHEET && range.getA1Notation() === 'B1') {
+      applyProductSelector_(sh, String(e.value || ''));
+      return;
+    }
+
+    if (name === OZON.SHEET) {
+      markMainSheetManualEdits_(sh, range);
+    } else if (name === OZON.CLUSTER_SALES_SHEET) {
+      markClusterPlanManualEdits_(sh, range);
+    }
   } catch (error) {
-    log_('Фильтр товара', 'ERROR', error && error.message ? error.message : String(error));
+    log_('Ручная правка', 'ERROR', error && error.message ? error.message : String(error));
   }
 }
 
+/**
+ * Правка «Поставить»: непустое значение становится ручным (оранжевым),
+ * очищенная ячейка сразу получает рекомендацию из H и снова считается авто.
+ */
+function markMainSheetManualEdits_(sh, range) {
+  const firstRow = Math.max(range.getRow(), OZON.DATA_START_ROW);
+  const lastRow = range.getLastRow();
+  const col = OZON.PUT_COLUMN;
+  if (lastRow < firstRow || range.getColumn() > col || range.getLastColumn() < col) return;
+
+  const rowCount = lastRow - firstRow + 1;
+  const values = sh.getRange(firstRow, 1, rowCount, col).getValues();
+  const putValues = [];
+  const backgrounds = [];
+
+  values.forEach(function(row) {
+    const offerId = String(row[0] || '').trim();
+    const put = row[col - 1];
+    if (offerId && put === '') {
+      putValues.push([row[7]]);
+      backgrounds.push([OZON.AUTO_PLAN_COLOR]);
+    } else {
+      putValues.push([put]);
+      backgrounds.push([offerId ? OZON.MANUAL_PLAN_COLOR : OZON.AUTO_PLAN_COLOR]);
+    }
+  });
+
+  sh.getRange(firstRow, col, rowCount, 1).setValues(putValues).setBackgrounds(backgrounds);
+}
+
+/**
+ * Правка «План» в кластерной таблице: непустое значение — ручное,
+ * очищенная ячейка сразу получает авторасчёт по строке.
+ */
+function markClusterPlanManualEdits_(sh, range) {
+  const firstRow = Math.max(range.getRow(), OZON.CLUSTER_DATA_START_ROW);
+  const lastRow = range.getLastRow();
+  if (lastRow < firstRow) return;
+
+  const planCols = getClusterPlanColumns_(sh).filter(function(col) {
+    return col >= range.getColumn() && col <= range.getLastColumn();
+  });
+  if (!planCols.length) return;
+
+  const rowCount = lastRow - firstRow + 1;
+  const ids = sh.getRange(firstRow, 1, rowCount, 2).getValues();
+  let settings = null;
+
+  planCols.forEach(function(col) {
+    const block = sh.getRange(firstRow, col - 4, rowCount, 5).getValues();
+    const values = [];
+    const backgrounds = [];
+
+    block.forEach(function(row, index) {
+      const offerId = String(ids[index][0] || '').trim();
+      const plan = row[4];
+      if (offerId && plan === '') {
+        settings = settings || getPlanningSettings_(getMainSheet_());
+        values.push([computeSupplyPlan_(row[0], row[1], row[2], settings, offerId, ids[index][1]).plan]);
+        backgrounds.push([OZON.AUTO_PLAN_COLOR]);
+      } else {
+        values.push([plan]);
+        backgrounds.push([offerId ? OZON.MANUAL_PLAN_COLOR : OZON.AUTO_PLAN_COLOR]);
+      }
+    });
+
+    sh.getRange(firstRow, col, rowCount, 1).setValues(values).setBackgrounds(backgrounds);
+  });
+}
+
+/** Номера столбцов «План» в кластерной таблице (по строке подзаголовков 4). */
+function getClusterPlanColumns_(sh) {
+  const lastCol = sh.getLastColumn();
+  if (lastCol < 5 || sh.getLastRow() < 4) return [];
+
+  const header = sh.getRange(4, 1, 1, lastCol).getDisplayValues()[0];
+  const result = [];
+  for (let col = 5; col <= lastCol; col++) {
+    if (String(header[col - 1] || '').trim() === 'План') result.push(col);
+  }
+  return result;
+}
+
+/**
+ * Показывает только выбранный товар. Строки скрываются диапазонами,
+ * а не по одной, поэтому фильтр работает быстро на большом каталоге.
+ */
 function applyProductSelector_(sh, selectedLabel) {
-  const dataStartRow = 5;
+  const dataStartRow = OZON.CLUSTER_DATA_START_ROW;
   const lastRow = sh.getLastRow();
   if (lastRow < dataStartRow) return;
 
-  sh.showRows(dataStartRow, lastRow - dataStartRow + 1);
+  const rowCount = lastRow - dataStartRow + 1;
+  sh.showRows(dataStartRow, rowCount);
   const selected = String(selectedLabel || '').trim();
   if (!selected) return;
 
   const offerId = selected.split(' — ')[0].trim();
-  const offers = sh.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, 1).getDisplayValues();
+  const offers = sh.getRange(dataStartRow, 1, rowCount, 1).getDisplayValues();
+
+  let runStart = -1;
   offers.forEach(function(row, index) {
-    if (String(row[0] || '').trim() !== offerId) sh.hideRows(dataStartRow + index);
+    const hide = String(row[0] || '').trim() !== offerId;
+    if (hide && runStart < 0) runStart = index;
+    if (!hide && runStart >= 0) {
+      sh.hideRows(dataStartRow + runStart, index - runStart);
+      runStart = -1;
+    }
   });
+  if (runStart >= 0) {
+    sh.hideRows(dataStartRow + runStart, offers.length - runStart);
+  }
 }
 
 /**
  * Сопоставляет название склада Ozon с одним из готовых кластеров таблицы.
- * Сначала проверяет прямое совпадение, затем устойчивые региональные алиасы.
+ *
+ * Сравнение идёт по целым словам, а не по подстроке: так «Смоленск»
+ * больше не попадает в Москву через «мо», а «Артёмовский» — в Дальний Восток.
+ * Сначала проверяются более длинные (более точные) названия,
+ * поэтому «Ростов Великий» уходит в Ярославль, а не в Ростов-на-Дону.
  */
+const WAREHOUSE_ALIASES = {
+  'екатеринбург': ['екатеринбург', 'екб', 'кольцово'],
+  'пермь': ['пермь'],
+  'санкт петербург': ['санкт петербург', 'спб', 'шушары', 'бугры'],
+  'калининград': ['калининград', 'храброво'],
+  'воронеж': ['воронеж', 'рамонь'],
+  'краснодар': ['краснодар', 'адыгейск', 'новая адыгея'],
+  'уфа': ['уфа'],
+  'самара': ['самара', 'чапаевск'],
+  'москва': ['москва', 'московская область', 'хоругвино', 'петровское', 'пушкино', 'домодедово', 'подольск', 'софьино', 'новая рига', 'гривно', 'павловская слобода', 'жуковский', 'черная грязь'],
+  'красноярск': ['красноярск'],
+  'дальний восток': ['хабаровск', 'владивосток', 'артем', 'благовещенск', 'южно сахалинск', 'петропавловск камчатский'],
+  'тюмень': ['тюмень'],
+  'ростов': ['ростов', 'ростов на дону', 'аксай'],
+  'казань': ['казань', 'зеленодольск'],
+  'ярославль': ['ярославль', 'ростов великий'],
+  'оренбург': ['оренбург'],
+  'новосибирск': ['новосибирск', 'обь'],
+  'саратов': ['саратов', 'энгельс'],
+  'невинномысск': ['невинномысск', 'ставрополь'],
+  'махачкала': ['махачкала', 'дагестан'],
+  'омск': ['омск'],
+  'тверь': ['тверь']
+};
+
+function containsPhrase_(text, phrase) {
+  if (!text || !phrase) return false;
+  return (' ' + text + ' ').indexOf(' ' + phrase + ' ') !== -1;
+}
+
 function matchWarehouseToCluster_(warehouseName, clusters) {
   const warehouse = normalizeGeo_(warehouseName);
   if (!warehouse) return '';
 
-  // Прямое вхождение названия кластера в название склада.
-  for (let i = 0; i < clusters.length; i++) {
-    const cluster = clusters[i];
-    const normalizedCluster = normalizeGeo_(cluster);
-    if (
-      normalizedCluster &&
-      (warehouse.indexOf(normalizedCluster) !== -1 ||
-       normalizedCluster.indexOf(warehouse) !== -1)
-    ) {
-      return cluster;
+  const candidates = [];
+
+  clusters.forEach(function(cluster) {
+    const clusterKey = normalizeGeo_(cluster);
+    if (!clusterKey) return;
+
+    // Полное название кластера как фраза в названии склада, и наоборот
+    // (например, склад «Казань» и кластер «Казань»).
+    candidates.push({phrase: clusterKey, cluster: cluster});
+
+    Object.keys(WAREHOUSE_ALIASES).forEach(function(key) {
+      if (!containsPhrase_(clusterKey, key)) return;
+      WAREHOUSE_ALIASES[key].forEach(function(alias) {
+        candidates.push({phrase: normalizeGeo_(alias), cluster: cluster});
+      });
+    });
+  });
+
+  // Длинные фразы точнее коротких, поэтому проверяем их первыми.
+  candidates.sort(function(a, b) { return b.phrase.length - a.phrase.length; });
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (containsPhrase_(warehouse, candidates[i].phrase)) {
+      return candidates[i].cluster;
     }
   }
 
-  const aliases = {
-    'екатеринбург': ['екатеринбург', 'екб', 'кольцово'],
-    'пермь': ['пермь'],
-    'санкт петербург': ['санкт петербург', 'спб', 'шушары', 'бугры'],
-    'калининград': ['калининград', 'храброво'],
-    'воронеж': ['воронеж', 'рамонь'],
-    'краснодар': ['краснодар', 'адыгейск', 'новая адыгея'],
-    'уфа': ['уфа'],
-    'самара': ['самара', 'чапаевск'],
-    'москва': ['москва', 'московская область', 'мо ', 'хоругвино', 'петровское', 'пушкино', 'домодедово', 'подольск', 'софьино', 'новая рига', 'гривно', 'павловская слобода', 'жуковский', 'черная грязь'],
-    'красноярск': ['красноярск'],
-    'дальний восток': ['хабаровск', 'владивосток', 'артем', 'благовещенск', 'южно сахалинск', 'петропавловск камчатский'],
-    'тюмень': ['тюмень'],
-    'ростов': ['ростов', 'аксай'],
-    'казань': ['казань', 'зеленодольск'],
-    'ярославль': ['ярославль'],
-    'оренбург': ['оренбург'],
-    'новосибирск': ['новосибирск', 'обь'],
-    'саратов': ['саратов', 'энгельс'],
-    'невинномысск': ['невинномысск', 'ставрополь'],
-    'махачкала': ['махачкала', 'дагестан'],
-    'омск': ['омск'],
-    'тверь': ['тверь']
-  };
-
-  for (let i = 0; i < clusters.length; i++) {
-    const cluster = clusters[i];
-    const clusterKey = normalizeGeo_(cluster);
-    let aliasKey = '';
-
-    Object.keys(aliases).some(function(key) {
-      if (clusterKey.indexOf(key) !== -1 || key.indexOf(clusterKey) !== -1) {
-        aliasKey = key;
-        return true;
-      }
-      return false;
-    });
-
-    if (!aliasKey) continue;
-
-    const list = aliases[aliasKey];
-    for (let j = 0; j < list.length; j++) {
-      if (warehouse.indexOf(normalizeGeo_(list[j])) !== -1) {
-        return cluster;
-      }
+  // Название кластера целиком совпало со складом из одного слова.
+  for (let i = 0; i < candidates.length; i++) {
+    if (containsPhrase_(candidates[i].phrase, warehouse) && warehouse.length >= 4) {
+      return candidates[i].cluster;
     }
   }
 
@@ -2725,8 +2845,11 @@ function refreshTransitSheetFromApi_(clusters, apiKey) {
 
   const allOrderIds = [];
   let lastId = '';
+  let listPage = 0;
 
   do {
+    listPage++;
+    const previousLastId = lastId;
     const listResponse = ozonRequest_(
       '/v3/supply-order/list',
       {
@@ -2748,6 +2871,13 @@ function refreshTransitSheetFromApi_(clusters, apiKey) {
     });
 
     lastId = String(listResponse.last_id || '').trim();
+
+    // Защита от бесконечного цикла: пустая страница или тот же last_id.
+    if (!ids.length || lastId === previousLastId) break;
+    if (listPage >= 200) {
+      throw new Error('Заявки на поставку: остановлено после 200 страниц.');
+    }
+    Utilities.sleep(250);
   } while (lastId);
 
   const bundleGroups = {};
@@ -2803,8 +2933,10 @@ function refreshTransitSheetFromApi_(clusters, apiKey) {
     });
   }
 
+  // Отдельный запрос по ID нужен только для кластеров,
+  // которых нет в уже загруженном общем списке.
   const exactClusterNames = loadClusterNamesByIds_(
-    Object.keys(bundleGroups),
+    Object.keys(bundleGroups).filter(function(id) { return !clusterIdToApiName[id]; }),
     apiKey
   );
 
@@ -2856,8 +2988,11 @@ function refreshTransitSheetFromApi_(clusters, apiKey) {
     for (let offset = 0; offset < uniqueBundleIds.length; offset += 100) {
       const batch = uniqueBundleIds.slice(offset, offset + 100);
       let bundleLastId = '';
+      let bundlePage = 0;
 
       do {
+        bundlePage++;
+        const previousBundleLastId = bundleLastId;
         const bundleResponse = ozonRequest_(
           '/v1/supply-order/bundle',
           {
@@ -2895,6 +3030,11 @@ function refreshTransitSheetFromApi_(clusters, apiKey) {
         bundleLastId = bundleResponse.has_next
           ? String(bundleResponse.last_id || '').trim()
           : '';
+
+        if (bundleLastId && (bundleLastId === previousBundleLastId || !items.length)) break;
+        if (bundlePage >= 200) {
+          throw new Error('Состав поставок: остановлено после 200 страниц.');
+        }
       } while (bundleLastId);
     }
   });
@@ -3127,7 +3267,7 @@ function collectSupplyPlan() {
       target.setColumnWidth(startCol + 1, 90);
       startCol += 3;
     });
-    // Компактный общий итог по артикулам в порядке исходной таблицы.
+    // Компактный общий итог по артикулам, отсортированный по артикулу.
     if (summaryItems > 0) {
       target.getRange(summaryStartRow, 1, 1, 2)
         .merge()
