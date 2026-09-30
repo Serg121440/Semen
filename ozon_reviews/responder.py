@@ -105,7 +105,8 @@ class OzonReviewsClient:
 
     def _post(self, path: str, payload: dict) -> dict:
         response = self._http.post(path, json=payload)
-        response.raise_for_status()
+        if response.is_error:
+            raise SystemExit(f"Ozon {path}: {response.status_code} {response.text}")
         return response.json()
 
     def list_unprocessed(self, limit: int = 100):
