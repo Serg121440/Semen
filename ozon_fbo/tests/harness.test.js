@@ -275,4 +275,9 @@ env2.sheets['Поставка FBO'].set(2, 2, 'c'); env2.sheets['Поставк�
 const res = env2.ctx.ozonRequest_('/v3/product/list', {}, 'k');
 assert.strictEqual(JSON.stringify(res), '{"result":{"items":[]}}'); assert.strictEqual(hit, 2);
 
+// Дневник давления: минимум 20, кратно 20
+assert.strictEqual(ctx.roundSupplyQuantity_(1, 'DD-1', 'Дневник давления'), 20);
+assert.strictEqual(ctx.roundSupplyQuantity_(21, 'DD-1', 'Дневник давления'), 40);
+assert.strictEqual(ctx.roundSupplyQuantity_(0, 'DD-1', 'Дневник давления'), 0);
+
 console.log('ALL TESTS PASSED');

@@ -1440,7 +1440,8 @@ function updateSales(silent) {
 }
 
 /**
- * Правила кратности поставки по типу товара.
+ * Правила кратности поставки по типу товара:
+ * фотоальбомы — 16, дневники — 20, раскраски — 10, наборы — 5 (минимум 10).
  * Тип определяется по артикулу и, если оно известно, по названию.
  */
 function normalizeSupplyText_(value) {
@@ -1471,6 +1472,12 @@ function isColoring_(offerId, name) {
   return (offer + ' ' + title).indexOf('РАСКРАСК') !== -1;
 }
 
+function isDiary_(offerId, name) {
+  const offer = normalizeSupplyText_(offerId);
+  const title = normalizeSupplyText_(name);
+  return (offer + ' ' + title).indexOf('ДНЕВНИК') !== -1;
+}
+
 function isSet_(offerId, name) {
   const offer = normalizeSupplyText_(offerId);
   const title = normalizeSupplyText_(name);
@@ -1491,6 +1498,11 @@ function roundSupplyQuantity_(quantity, offerId, name) {
   // Фотоальбомы: минимум одна полная коробка, далее кратно 16.
   if (isPhotoAlbum_(offerId, name)) {
     return Math.max(16, Math.ceil(value / 16) * 16);
+  }
+
+  // Дневники (дневник давления): минимум одна коробка, далее кратно 20.
+  if (isDiary_(offerId, name)) {
+    return Math.max(20, Math.ceil(value / 20) * 20);
   }
 
   // Раскраски: минимум 10, далее кратно 10.
