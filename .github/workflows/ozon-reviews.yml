@@ -1,9 +1,10 @@
 name: Ozon reviews
 
 on:
-  schedule:
-    # 08:00, 15:00, 23:00 по Москве (UTC+3)
-    - cron: "0 5,12,20 * * *"
+  # Расписание отключено: без подписки Premium Plus/Pro API отзывов Ozon
+  # отвечает 403. Чтобы включить, верните блок:
+  # schedule:
+  #   - cron: "0 5,12,20 * * *"   # 08:00, 15:00, 23:00 по Москве
   workflow_dispatch:
     inputs:
       send:

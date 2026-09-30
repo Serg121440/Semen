@@ -35,3 +35,10 @@ def test_generate_reply_without_key_uses_template():
     from ozon_reviews.responder import generate_reply
 
     assert "очень жаль" in generate_reply(1, "плохо", None)
+
+
+def test_env_strips_invisible_characters(monkeypatch):
+    from ozon_reviews.responder import env
+
+    monkeypatch.setenv("OZON_CLIENT_ID", " 1568281 \n")
+    assert env("OZON_CLIENT_ID") == "1568281"

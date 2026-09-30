@@ -105,7 +105,8 @@ class OzonReviewsClient:
 
     def _post(self, path: str, payload: dict) -> dict:
         response = self._http.post(path, json=payload)
-        response.raise_for_status()
+        if response.is_error:
+            raise SystemExit(f"Ozon {path}: {response.status_code} {response.text}")
         return response.json()
 
     def list_unprocessed(self, limit: int = 100):
@@ -159,20 +160,26 @@ def run(
     return handled
 
 
+def env(name: str) -> str | None:
+    """Значение переменной без пробелов и невидимых символов из копипаста."""
+    value = "".join(ch for ch in os.environ.get(name, "") if ch.isprintable())
+    return value.strip() or None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--send", action="store_true", help="реально отправить")
     args = parser.parse_args()
 
     load_dotenv()
-    client_id = os.environ.get("OZON_CLIENT_ID")
-    api_key = os.environ.get("OZON_API_KEY")
+    client_id = env("OZON_CLIENT_ID")
+    api_key = env("OZON_API_KEY")
     if not client_id or not api_key:
         raise SystemExit("Задайте OZON_CLIENT_ID и OZON_API_KEY в .env")
     run(
         OzonReviewsClient(client_id, api_key),
         send=args.send,
-        llm_key=os.environ.get("ANTHROPIC_API_KEY"),
+        llm_key=env("ANTHROPIC_API_KEY"),
     )
 
 
