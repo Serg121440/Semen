@@ -1,0 +1,34 @@
+name: Ozon reviews
+
+on:
+  schedule:
+    # 08:00, 15:00, 23:00 по Москве (UTC+3)
+    - cron: "0 5,12,20 * * *"
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "Отправить ответы (false = dry-run)"
+        type: boolean
+        default: false
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install httpx python-dotenv
+      - name: Reply to unprocessed reviews
+        env:
+          OZON_CLIENT_ID: ${{ secrets.OZON_CLIENT_ID }}
+          OZON_API_KEY: ${{ secrets.OZON_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SEND: ${{ github.event_name == 'schedule' || inputs.send }}
+        run: |
+          if [ "$SEND" = "true" ]; then
+            python -m ozon_reviews.responder --send
+          else
+            python -m ozon_reviews.responder
+          fi
