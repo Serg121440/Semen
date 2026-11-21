@@ -179,4 +179,6 @@ export type DashboardData = {
   selectedPosition: Position | null;
   trend: TrendResponse | null;
   marketAnalysis: MarketAnalysisResponse | null;
+  /** When the server took this snapshot (ms since epoch). */
+  fetchedAt: number;
 };

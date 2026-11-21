@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 type MetricProps = {
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: "default" | "gold" | "red" | "green";
 };
 

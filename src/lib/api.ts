@@ -64,7 +64,8 @@ export async function loadDashboard(
     rescue,
     selectedPosition,
     trend,
-    marketAnalysis
+    marketAnalysis,
+    fetchedAt: Date.now()
   };
 }
 

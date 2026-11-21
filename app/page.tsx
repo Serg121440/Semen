@@ -3,6 +3,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/card";
+import {
+  LiveAccountValue,
+  LiveDataProvider,
+  LiveFreshness,
+  LivePrice,
+  StaleBanner
+} from "@/components/live-data";
 import { MarketAnalysis } from "@/components/market-analysis";
 import { Metric } from "@/components/metric";
 import { PositionsTable } from "@/components/positions-table";
@@ -56,8 +63,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const headerRiskScore = rescue?.risk_score ?? estimatePortfolioRisk(activePositions, equityNumber);
   const headerRiskLevel =
     rescue?.risk_level ?? (headerRiskScore >= 80 ? "critical" : headerRiskScore >= 60 ? "high" : headerRiskScore >= 35 ? "medium" : "low");
+  const livePositions = activePositions.map((position) => ({
+    symbol: position.symbol,
+    side: position.side,
+    size: Number(position.size || 0),
+    entry: Number(position.avgPrice || 0),
+    snapshotPnl: Number(position.unrealisedPnl || 0)
+  }));
+  const liveSymbols = Array.from(
+    new Set(["BTCUSDT", "ETHUSDT", symbol, ...activePositions.map((position) => position.symbol)])
+  ).sort();
 
   return (
+    <LiveDataProvider
+      testnet={data.health.testnet}
+      symbols={liveSymbols}
+      positions={livePositions}
+      snapshotEquity={equityNumber}
+      fetchedAt={data.fetchedAt}
+    >
     <main className="min-h-screen bg-[radial-gradient(1100px_520px_at_78%_-12%,rgba(40,62,96,0.16),transparent_62%),#0a0c11] text-[#e7ebf2]">
       <header className="sticky top-0 z-20 border-b border-white/[0.07] bg-[#0a0c11]/85 px-5 py-2.5 backdrop-blur-xl">
         <div className="flex flex-wrap items-center gap-5">
@@ -96,19 +120,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             ))}
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="font-mono text-base font-semibold text-white">{money(data.market.current_price)}</span>
+              <span className="font-mono text-base font-semibold text-white">
+                <LivePrice symbol={symbol} fallback={data.market.current_price} />
+              </span>
               <span className="rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] font-semibold text-[#7f8a99]">
                 {symbol}{selectedSide ? ` · ${sideLabel(selectedSide)}` : ""}
               </span>
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             </div>
           </div>
 
           <div className="flex-1" />
 
           <div className="flex shrink-0 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0e1118]">
-            <HeaderVital label="Equity" value={`${money(data.balance.equity)} USDT`} tone={equityNumber < 0 ? "red" : "green"} />
-            <HeaderVital label="uPnL" value={`${money(totalPnl)} USDT`} tone={totalPnl < 0 ? "red" : "green"} />
+            <HeaderVital
+              label="Equity"
+              value={<LiveAccountValue kind="equity" fallback={equityNumber} suffix=" USDT" toneClasses={LIVE_TONES} />}
+            />
+            <HeaderVital
+              label="uPnL"
+              value={<LiveAccountValue kind="pnl" fallback={totalPnl} suffix=" USDT" toneClasses={LIVE_TONES} />}
+            />
             <HeaderVital label="Риск" value={`${headerRiskScore} ${riskLabel(headerRiskLevel)}`} tone={headerRiskScore >= 70 ? "red" : headerRiskScore >= 45 ? "gold" : "green"} last />
           </div>
           <div className="h-8 w-8 rounded-full border border-white/[0.08] bg-[#1a1f29]" />
@@ -134,21 +165,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </Link>
         ))}
         <div className="flex-1" />
-        <div className="flex items-center gap-2 font-mono text-[10.5px] text-[#5a6473]">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          FastAPI · Bybit · сейчас
-        </div>
+        <LiveFreshness />
       </div>
 
       <div className="dashboard-shell crypto-shell mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
+      <StaleBanner />
       {view === "overview" ? (
       <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card title="Капитал · Equity" className={Number(data.balance.equity) < 0 ? "border-red-500/35 bg-red-500/[0.06]" : ""}>
           <div className="flex items-start justify-between gap-3">
             <Metric
               label="Equity"
-              value={`${money(data.balance.equity)} USDT`}
-              tone={Number(data.balance.equity) < 0 ? "red" : "green"}
+              value={<LiveAccountValue kind="equity" fallback={equityNumber} suffix=" USDT" toneClasses={LIVE_TONES} />}
             />
             {Number(data.balance.equity) < 0 ? (
               <span className="rounded-full bg-gold-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-gold-300">
@@ -164,15 +192,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="self-end pb-0.5 text-silver-700">+</div>
             <div>
               <div className="text-xs text-silver-500">Нереализ. PnL</div>
-              <div className={`mt-1 font-mono ${totalPnl < 0 ? "text-red-300" : "text-emerald-300"}`}>
-                {money(totalPnl)}
+              <div className="mt-1 font-mono">
+                <LiveAccountValue kind="pnl" fallback={totalPnl} toneClasses={LIVE_TONES} />
               </div>
             </div>
           </div>
         </Card>
 
         <Card title={`${symbol} · текущая цена`}>
-          <Metric label="Текущая цена" value={money(data.market.current_price)} tone="default" />
+          <Metric
+            label="Текущая цена"
+            value={<LivePrice symbol={symbol} fallback={data.market.current_price} />}
+            tone="default"
+          />
           <div className="mt-4 flex flex-wrap gap-2 text-xs text-silver-500">
             <span className="rounded-md bg-white/[0.04] px-2 py-1">
               шаг цены {data.market.rules.tick_size}
@@ -186,8 +218,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <Card title="Общий PnL">
           <Metric
             label="Нереализованный"
-            value={`${money(totalPnl)} USDT`}
-            tone={totalPnl < 0 ? "red" : "green"}
+            value={<LiveAccountValue kind="pnl" fallback={totalPnl} suffix=" USDT" toneClasses={LIVE_TONES} />}
           />
           <div className="mt-4 text-sm text-silver-500">
             активных позиций: {data.positions.positions.filter((position) => Number(position.size) > 0).length}
@@ -269,13 +300,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <span>Интерфейс работает только в режиме расчетов. Кнопок отправки ордеров нет.</span>
         <span className="inline-flex items-center gap-2">
           <RefreshCcw className="h-3.5 w-3.5" />
-          Данные обновляются через FastAPI
+          Цены — поток Bybit, счёт — FastAPI раз в 15 с
         </span>
       </footer>
       </div>
     </main>
+    </LiveDataProvider>
   );
 }
+
+const LIVE_TONES = { positive: "text-emerald-300", negative: "text-red-300" };
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -295,7 +329,7 @@ function HeaderVital({
   last = false
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: "default" | "green" | "red" | "gold";
   last?: boolean;
 }) {
