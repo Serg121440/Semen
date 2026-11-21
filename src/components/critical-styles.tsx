@@ -276,8 +276,10 @@ const criticalCss = `
     border-color: rgba(232, 200, 117, 0.3) !important;
   }
 
-  span[class*="rounded-full"],
-  div[class*="inline-flex"][class*="rounded-full"] {
+  /* Pills only: empty rounded spans are decorative (tab underline, status dots)
+     and must keep their own tiny size, or they cover the text next to them. */
+  span[class*="rounded-full"]:not(:empty),
+  div[class*="inline-flex"][class*="rounded-full"]:not(:empty) {
     display: inline-flex;
     align-items: center;
     min-height: 28px;
