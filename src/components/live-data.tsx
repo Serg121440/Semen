@@ -34,13 +34,17 @@ export type LivePosition = {
   snapshotPnl: number;
 };
 
-type Ticker = { last?: number; mark?: number };
+/** `at` = when this browser received the tick (client clock). */
+type Ticker = { last?: number; mark?: number; at: number };
 
 type LiveState = {
   tickers: Record<string, Ticker>;
-  lastTickAt: number | null;
+  /** Symbols whose prices are shown or priced into the account. */
+  tracked: string[];
   connected: boolean;
   fetchedAt: number;
+  /** When this browser received the current account snapshot (client clock). */
+  snapshotAt: number;
   startedAt: number;
   now: number;
   positions: LivePosition[];
@@ -54,6 +58,7 @@ const LiveContext = createContext<LiveState | null>(null);
 export function LiveDataProvider({
   testnet,
   symbols,
+  tracked,
   positions,
   snapshotEquity,
   fetchedAt,
@@ -61,6 +66,7 @@ export function LiveDataProvider({
 }: {
   testnet: boolean;
   symbols: string[];
+  tracked: string[];
   positions: LivePosition[];
   snapshotEquity: number;
   fetchedAt: number;
@@ -68,19 +74,24 @@ export function LiveDataProvider({
 }) {
   const router = useRouter();
   const [tickers, setTickers] = useState<Record<string, Ticker>>({});
-  const [lastTickAt, setLastTickAt] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
   // Start from the snapshot time so server and client render the same text;
   // the real clock takes over after mount.
   const [now, setNow] = useState(fetchedAt);
   const [startedAt, setStartedAt] = useState(fetchedAt);
+  const [snapshotAt, setSnapshotAt] = useState(fetchedAt);
   useEffect(() => {
     setStartedAt(Date.now());
     setNow(Date.now());
   }, []);
+  // Each refreshed snapshot supersedes marks received before it.
+  useEffect(() => {
+    setSnapshotAt(Date.now());
+  }, [fetchedAt]);
   const buffer = useRef<Record<string, Ticker>>({});
-  const bufferedAt = useRef<number | null>(null);
+  const dirty = useRef(false);
   const symbolsKey = symbols.join(",");
+  const trackedKey = tracked.join(",");
 
   // Price stream with reconnect and keep-alive.
   useEffect(() => {
@@ -111,14 +122,15 @@ export function LiveDataProvider({
         }
         if (!message.topic?.startsWith("tickers.") || !message.data) return;
         const symbol = message.topic.slice("tickers.".length);
-        const prev = buffer.current[symbol] ?? {};
+        const prev = buffer.current[symbol];
         const last = Number(message.data.lastPrice);
         const mark = Number(message.data.markPrice);
         buffer.current[symbol] = {
-          last: Number.isFinite(last) && last > 0 ? last : prev.last,
-          mark: Number.isFinite(mark) && mark > 0 ? mark : prev.mark
+          last: Number.isFinite(last) && last > 0 ? last : prev?.last,
+          mark: Number.isFinite(mark) && mark > 0 ? mark : prev?.mark,
+          at: Date.now()
         };
-        bufferedAt.current = Date.now();
+        dirty.current = true;
       };
       ws.onclose = () => {
         clearInterval(ping);
@@ -142,12 +154,9 @@ export function LiveDataProvider({
   // Batch ticks into at most 4 renders per second; also drives the age labels.
   useEffect(() => {
     const id = setInterval(() => {
-      if (bufferedAt.current !== null) {
-        const next = buffer.current;
-        const at = bufferedAt.current;
-        bufferedAt.current = null;
-        setTickers((prev) => ({ ...prev, ...next }));
-        setLastTickAt(at);
+      if (dirty.current) {
+        dirty.current = false;
+        setTickers({ ...buffer.current });
       }
       setNow(Date.now());
     }, FLUSH_MS);
@@ -170,8 +179,18 @@ export function LiveDataProvider({
   }, [router]);
 
   const value = useMemo<LiveState>(
-    () => ({ tickers, lastTickAt, connected, fetchedAt, startedAt, now, positions, snapshotEquity }),
-    [tickers, lastTickAt, connected, fetchedAt, startedAt, now, positions, snapshotEquity]
+    () => ({
+      tickers,
+      tracked: trackedKey.split(",").filter(Boolean),
+      connected,
+      fetchedAt,
+      snapshotAt,
+      startedAt,
+      now,
+      positions,
+      snapshotEquity
+    }),
+    [tickers, trackedKey, connected, fetchedAt, snapshotAt, startedAt, now, positions, snapshotEquity]
   );
 
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
@@ -181,13 +200,39 @@ function useLive(): LiveState | null {
   return useContext(LiveContext);
 }
 
+/**
+ * A streamed price is used only while it is fresh and newer than the account
+ * snapshot; otherwise the snapshot value wins (a dropped stream must not roll
+ * fresh account numbers back to an old mark).
+ */
+function usablePrice(state: LiveState, symbol: string, field: "last" | "mark"): number | undefined {
+  const ticker = state.tickers[symbol];
+  const value = ticker?.[field];
+  if (!ticker || !value) return undefined;
+  if (ticker.at < state.snapshotAt) return undefined;
+  if (state.now - ticker.at > STALE_MS) return undefined;
+  return value;
+}
+
+/** Age of the oldest tracked price; null while any tracked symbol has no tick yet. */
+function oldestPriceAge(state: LiveState): number | null {
+  if (!state.tracked.length) return null;
+  let oldest = 0;
+  for (const symbol of state.tracked) {
+    const ticker = state.tickers[symbol];
+    if (!ticker) return null;
+    oldest = Math.max(oldest, state.now - ticker.at);
+  }
+  return oldest;
+}
+
 function livePnl(state: LiveState): { pnl: number; equity: number; live: boolean } {
   let pnl = 0;
   let snapshot = 0;
   let live = false;
   for (const position of state.positions) {
     snapshot += position.snapshotPnl;
-    const mark = state.tickers[position.symbol]?.mark;
+    const mark = usablePrice(state, position.symbol, "mark");
     if (mark && position.entry > 0) {
       const direction = position.side === "Sell" ? -1 : 1;
       pnl += direction * position.size * (mark - position.entry);
@@ -220,7 +265,7 @@ function formatAge(ageMs: number): string {
 
 export function LivePrice({ symbol, fallback }: { symbol: string; fallback: string | number }) {
   const state = useLive();
-  const last = state?.tickers[symbol]?.last;
+  const last = state ? usablePrice(state, symbol, "last") : undefined;
   return <>{money(last ?? fallback)}</>;
 }
 
@@ -253,7 +298,7 @@ export function LiveAccountValue({
 export function LiveFreshness() {
   const state = useLive();
   if (!state) return null;
-  const priceAge = state.lastTickAt ? state.now - state.lastTickAt : null;
+  const priceAge = oldestPriceAge(state);
   const accountAge = state.now - state.fetchedAt;
   const starting = state.now - state.startedAt < CONNECT_GRACE_MS;
   const waiting = !state.connected || priceAge === null;
@@ -283,7 +328,7 @@ export function StaleBanner() {
   if (!state) return null;
   if (state.now - state.startedAt < CONNECT_GRACE_MS) return null;
   const accountAge = state.now - state.fetchedAt;
-  const priceAge = state.lastTickAt ? state.now - state.lastTickAt : null;
+  const priceAge = oldestPriceAge(state);
   const priceDown = !state.connected || priceAge === null || priceAge > STALE_MS;
   const accountDown = accountAge > ACCOUNT_REFRESH_MS * 4;
   if (!priceDown && !accountDown) return null;

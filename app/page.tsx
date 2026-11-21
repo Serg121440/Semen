@@ -73,11 +73,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const liveSymbols = Array.from(
     new Set(["BTCUSDT", "ETHUSDT", symbol, ...activePositions.map((position) => position.symbol)])
   ).sort();
+  // Freshness is judged only by prices that are shown or priced into the account.
+  const trackedSymbols = Array.from(
+    new Set([symbol, ...activePositions.map((position) => position.symbol)])
+  ).sort();
 
   return (
     <LiveDataProvider
       testnet={data.health.testnet}
       symbols={liveSymbols}
+      tracked={trackedSymbols}
       positions={livePositions}
       snapshotEquity={equityNumber}
       fetchedAt={data.fetchedAt}
