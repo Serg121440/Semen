@@ -2,6 +2,7 @@ import { RefreshCcw, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { DashboardPanels, DashboardSymbolLink, DashboardTabs } from "@/components/dashboard-tabs";
 import { Card } from "@/components/card";
 import {
   LiveAccountValue,
@@ -38,7 +39,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const params = (await searchParams) ?? {};
   const requestedSymbol = firstParam(params.symbol) ?? "BTCUSDT";
   const requestedSide = firstParam(params.side);
-  const view = normalizeView(firstParam(params.view));
   const data = await loadDashboard(requestedSymbol, requestedSide);
   const rescue = data.rescue?.rescue_plan ?? null;
   const activePosition = data.selectedPosition;
@@ -57,7 +57,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     activePositions,
     symbol,
     selectedSide,
-    view
+    "analysis"
   );
   const equityNumber = Number(data.balance.equity ?? 0);
   const headerRiskScore = rescue?.risk_score ?? estimatePortfolioRisk(activePositions, equityNumber);
@@ -111,7 +111,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <div className="flex shrink-0 items-center gap-3">
             <div className="flex rounded-lg border border-white/[0.08] bg-[#0d1016] p-0.5">
               {scenarioTargets.map((target) => (
-              <Link
+              <DashboardSymbolLink
                 key={target.key}
                 href={target.href}
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
@@ -121,7 +121,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 }`}
               >
                 {target.label}
-              </Link>
+              </DashboardSymbolLink>
             ))}
             </div>
             <div className="flex items-baseline gap-2">
@@ -151,155 +151,135 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </div>
       </header>
 
-      <div className="flex items-center gap-0 border-b border-white/[0.06] bg-[#0c0e14]/50 px-5">
-        {[
-          ["overview", "Обзор"],
-          ["positions", "Позиции"],
-          ["analysis", "Анализ"],
-          ["rescue", "Спасение"]
-        ].map(([key, label]) => (
-          <Link
-            key={key}
-            href={dashboardHref(symbol, selectedSide, key)}
-            className={`relative px-5 py-3 text-sm font-semibold transition ${
-              view === key ? "text-white" : "text-[#7f8a99] hover:text-silver-300"
-            }`}
-          >
-            {label}
-            <span className={`absolute inset-x-5 bottom-0 h-0.5 rounded-full ${view === key ? "bg-[#5b8cff]" : "bg-transparent"}`} />
-          </Link>
-        ))}
-        <div className="flex-1" />
-        <LiveFreshness />
-      </div>
+      <DashboardTabs freshness={<LiveFreshness />} />
 
       <div className="dashboard-shell crypto-shell mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-7">
       <StaleBanner />
-      {view === "overview" ? (
-      <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Капитал · Equity" className={Number(data.balance.equity) < 0 ? "border-red-500/35 bg-red-500/[0.06]" : ""}>
-          <div className="flex items-start justify-between gap-3">
-            <Metric
-              label="Equity"
-              value={<LiveAccountValue kind="equity" fallback={equityNumber} suffix=" USDT" toneClasses={LIVE_TONES} />}
+      <DashboardPanels panels={{
+        overview: (
+          <>
+            <section className="dashboard-metrics grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Card title="Капитал · Equity" className={Number(data.balance.equity) < 0 ? "border-red-500/35 bg-red-500/[0.06]" : ""}>
+                <div className="flex items-start justify-between gap-3">
+                  <Metric
+                    label="Equity"
+                    value={<LiveAccountValue kind="equity" fallback={equityNumber} suffix=" USDT" toneClasses={LIVE_TONES} />}
+                  />
+                  {Number(data.balance.equity) < 0 ? (
+                    <span className="rounded-full bg-gold-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-gold-300">
+                      риск
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-silver-500">Кошелек</div>
+                    <div className="mt-1 font-mono text-silver-300">{money(data.balance.wallet_balance)}</div>
+                  </div>
+                  <div className="self-end pb-0.5 text-silver-700">+</div>
+                  <div>
+                    <div className="text-xs text-silver-500">Нереализ. PnL</div>
+                    <div className="mt-1 font-mono">
+                      <LiveAccountValue kind="pnl" fallback={totalPnl} toneClasses={LIVE_TONES} />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card title={`${symbol} · текущая цена`}>
+                <Metric
+                  label="Текущая цена"
+                  value={<LivePrice symbol={symbol} fallback={data.market.current_price} />}
+                  tone="default"
+                />
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-silver-500">
+                  <span className="rounded-md bg-white/[0.04] px-2 py-1">
+                    шаг цены {data.market.rules.tick_size}
+                  </span>
+                  <span className="rounded-md bg-white/[0.04] px-2 py-1">
+                    шаг объема {data.market.rules.qty_step}
+                  </span>
+                </div>
+              </Card>
+
+              <Card title="Общий PnL">
+                <Metric
+                  label="Нереализованный"
+                  value={<LiveAccountValue kind="pnl" fallback={totalPnl} suffix=" USDT" toneClasses={LIVE_TONES} />}
+                />
+                <div className="mt-4 text-sm text-silver-500">
+                  активных позиций: {data.positions.positions.filter((position) => Number(position.size) > 0).length}
+                </div>
+              </Card>
+
+              <Card title="Статус риска">
+                <div className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold uppercase ${riskClass(riskLevel)}`}>
+                  {riskLabel(riskLevel)}
+                </div>
+                <div className="mt-4 flex items-end gap-2">
+                  <div className="text-4xl font-semibold text-white">
+                    {rescue?.risk_score ?? 0}
+                  </div>
+                  <div className="pb-1 text-sm text-silver-500">/ 100</div>
+                </div>
+              </Card>
+            </section>
+            <PositionSwitcher
+              positions={activePositions}
+              selectedSymbol={activePosition?.symbol}
+              selectedSide={selectedSide}
+              view="overview"
             />
-            {Number(data.balance.equity) < 0 ? (
-              <span className="rounded-full bg-gold-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-gold-300">
-                риск
-              </span>
+            <OverviewScreen
+              activePosition={activePosition}
+              positions={activePositions}
+              rescue={rescue}
+              totalPnl={totalPnl}
+              equity={data.balance.equity}
+              wallet={data.balance.wallet_balance}
+              symbol={symbol}
+              selectedSide={selectedSide}
+            />
+          </>
+        ),
+        analysis: (
+          <>
+            <ScenarioDashboard
+              key={`${symbol}-${selectedSide ?? ""}`}
+              initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
+              selectedSymbol={symbol}
+              currentPrice={data.market.current_price}
+              marketAnalysis={data.marketAnalysis}
+              switchTargets={scenarioTargets}
+            />
+            <MarketAnalysis analysis={data.marketAnalysis} />
+          </>
+        ),
+        positions: (
+          <>
+            <PositionsScreen
+              positions={data.positions.positions}
+              rescue={rescue}
+              selectedSymbol={activePosition?.symbol}
+              selectedSide={selectedSide}
+              view="positions"
+            />
+          </>
+        ),
+        rescue: (
+          <>
+            {rescue ? (
+              <RescueScreen
+                positions={activePositions}
+                rescue={rescue}
+                wallet={data.balance.wallet_balance}
+                equity={data.balance.equity}
+                totalPnl={totalPnl}
+              />
             ) : null}
-          </div>
-          <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-3 text-sm">
-            <div>
-              <div className="text-xs text-silver-500">Кошелек</div>
-              <div className="mt-1 font-mono text-silver-300">{money(data.balance.wallet_balance)}</div>
-            </div>
-            <div className="self-end pb-0.5 text-silver-700">+</div>
-            <div>
-              <div className="text-xs text-silver-500">Нереализ. PnL</div>
-              <div className="mt-1 font-mono">
-                <LiveAccountValue kind="pnl" fallback={totalPnl} toneClasses={LIVE_TONES} />
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <Card title={`${symbol} · текущая цена`}>
-          <Metric
-            label="Текущая цена"
-            value={<LivePrice symbol={symbol} fallback={data.market.current_price} />}
-            tone="default"
-          />
-          <div className="mt-4 flex flex-wrap gap-2 text-xs text-silver-500">
-            <span className="rounded-md bg-white/[0.04] px-2 py-1">
-              шаг цены {data.market.rules.tick_size}
-            </span>
-            <span className="rounded-md bg-white/[0.04] px-2 py-1">
-              шаг объема {data.market.rules.qty_step}
-            </span>
-          </div>
-        </Card>
-
-        <Card title="Общий PnL">
-          <Metric
-            label="Нереализованный"
-            value={<LiveAccountValue kind="pnl" fallback={totalPnl} suffix=" USDT" toneClasses={LIVE_TONES} />}
-          />
-          <div className="mt-4 text-sm text-silver-500">
-            активных позиций: {data.positions.positions.filter((position) => Number(position.size) > 0).length}
-          </div>
-        </Card>
-
-        <Card title="Статус риска">
-          <div className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold uppercase ${riskClass(riskLevel)}`}>
-            {riskLabel(riskLevel)}
-          </div>
-          <div className="mt-4 flex items-end gap-2">
-            <div className="text-4xl font-semibold text-white">
-              {rescue?.risk_score ?? 0}
-            </div>
-            <div className="pb-1 text-sm text-silver-500">/ 100</div>
-          </div>
-        </Card>
-      </section>
-      ) : null}
-
-      {view === "overview" ? (
-        <PositionSwitcher
-          positions={activePositions}
-          selectedSymbol={activePosition?.symbol}
-          selectedSide={selectedSide}
-          view={view}
-        />
-      ) : null}
-
-      {view === "analysis" ? (
-        <ScenarioDashboard
-          key={`${symbol}-${selectedSide ?? ""}`}
-          initialSymbol={asset === "ETH" ? "ETH" : "BTC"}
-          selectedSymbol={symbol}
-          currentPrice={data.market.current_price}
-          marketAnalysis={data.marketAnalysis}
-          switchTargets={scenarioTargets}
-        />
-      ) : null}
-
-      {view === "overview" ? (
-        <OverviewScreen
-          activePosition={activePosition}
-          positions={activePositions}
-          rescue={rescue}
-          totalPnl={totalPnl}
-          equity={data.balance.equity}
-          wallet={data.balance.wallet_balance}
-          symbol={symbol}
-          selectedSide={selectedSide}
-        />
-      ) : null}
-
-      {view === "positions" ? (
-        <PositionsScreen
-          positions={data.positions.positions}
-          rescue={rescue}
-          selectedSymbol={activePosition?.symbol}
-          selectedSide={selectedSide}
-          view={view}
-        />
-      ) : null}
-
-      {view === "analysis" ? (
-        <MarketAnalysis analysis={data.marketAnalysis} />
-      ) : null}
-
-      {view === "rescue" && rescue ? (
-        <RescueScreen
-          positions={activePositions}
-          rescue={rescue}
-          wallet={data.balance.wallet_balance}
-          equity={data.balance.equity}
-          totalPnl={totalPnl}
-        />
-      ) : null}
+          </>
+        ),
+      }} />
 
       <footer className="flex items-center justify-between border-t border-white/10 py-5 text-xs text-silver-500">
         <span>Интерфейс работает только в режиме расчетов. Кнопок отправки ордеров нет.</span>
@@ -318,13 +298,6 @@ const LIVE_TONES = { positive: "text-emerald-300", negative: "text-red-300" };
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function normalizeView(value: string | undefined): string {
-  if (["overview", "positions", "rescue", "analysis"].includes(value ?? "")) {
-    return value as string;
-  }
-  return "overview";
 }
 
 function HeaderVital({
