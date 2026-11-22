@@ -166,7 +166,6 @@ WEB_CORS_ORIGINS=https://your-frontend-domain
 Frontend env:
 BACKEND_API_BASE_URL=https://your-backend-domain
 BACKEND_API_TOKEN=<same-long-random-token>
-BACKEND_ALLOW_SELF_SIGNED_TLS=false
 ```
 
 Relax Dev settings:
@@ -185,15 +184,8 @@ Build command: npm install && npm run build
 Start command: npm run start -- -p $PORT
 ```
 
-If the deployment provider serves the backend with a self-signed certificate,
-set this on the frontend project only:
-
-```env
-BACKEND_ALLOW_SELF_SIGNED_TLS=true
-```
-
-Prefer fixing the backend certificate when possible. This flag is a provider
-compatibility fallback for server-side frontend requests.
+The backend must be served with a valid TLS certificate: the frontend
+verifies it on every server-side request.
 
 ## Quality Checks
 
