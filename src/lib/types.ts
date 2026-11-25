@@ -120,6 +120,12 @@ export type PositionsResponse = {
   positions: Position[];
 };
 
+export type AccountSnapshot = {
+  balance: BalanceResponse;
+  positions: PositionsResponse;
+  fetchedAt: number;
+};
+
 export type RescuePlan = {
   symbol: string;
   side: string;

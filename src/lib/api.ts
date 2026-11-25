@@ -1,4 +1,5 @@
 import type {
+  AccountSnapshot,
   BalanceResponse,
   DashboardData,
   HealthResponse,
@@ -25,15 +26,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function loadAccountSnapshot(): Promise<AccountSnapshot> {
+  const signal = AbortSignal.timeout(10_000);
+  const [balance, positions] = await Promise.all([
+    request<BalanceResponse>("/api/account/balance", { signal }),
+    request<PositionsResponse>("/api/positions", { signal })
+  ]);
+  return { balance, positions, fetchedAt: Date.now() };
+}
+
 export async function loadDashboard(
   symbol = "BTCUSDT",
   side?: string
 ): Promise<DashboardData> {
-  const [health, balance, positions] = await Promise.all([
+  const [health, account] = await Promise.all([
     request<HealthResponse>("/api/health"),
-    request<BalanceResponse>("/api/account/balance"),
-    request<PositionsResponse>("/api/positions")
+    loadAccountSnapshot()
   ]);
+  const { positions } = account;
 
   const activePositions = positions.positions.filter((position) => Number(position.size) > 0);
   const selectedPosition =
@@ -49,7 +59,11 @@ export async function loadDashboard(
     selectedPosition
       ? request<RescueResponse>(`/api/rescue/${selectedSymbol}`, {
           method: "POST",
-          body: JSON.stringify({ side: selectedSide })
+          body: JSON.stringify({ side: selectedSide }),
+          signal: AbortSignal.timeout(8_000)
+        }).catch((error: unknown) => {
+          console.warn("Dashboard analysis unavailable", error instanceof Error ? error.name : "UnknownError");
+          return null;
         })
       : Promise.resolve(null)
   ]);
@@ -58,14 +72,12 @@ export async function loadDashboard(
 
   return {
     health,
-    balance,
+    ...account,
     market,
-    positions,
     rescue,
     selectedPosition,
     trend,
-    marketAnalysis,
-    fetchedAt: Date.now()
+    marketAnalysis
   };
 }
 
