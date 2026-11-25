@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   createContext,
   useContext,
@@ -16,11 +15,11 @@ import { money } from "@/lib/format";
 // Live layer on top of the server-rendered snapshot.
 // - Prices: Bybit public WebSocket (tickers), no API key involved.
 // - Account (positions, wallet): the server snapshot is re-fetched in the
-//   background with router.refresh(), so it never silently goes stale.
+//   background by the dashboard, so it never silently goes stale.
 // uPnL and equity are re-priced in the browser between snapshots:
 //   equity_live = equity_snapshot + (uPnL_live − uPnL_snapshot).
 
-const ACCOUNT_REFRESH_MS = 15_000;
+export const ACCOUNT_REFRESH_MS = 15_000;
 const FLUSH_MS = 250;
 const PING_MS = 20_000;
 const FRESH_MS = 5_000;
@@ -72,7 +71,6 @@ export function LiveDataProvider({
   fetchedAt: number;
   children: ReactNode;
 }) {
-  const router = useRouter();
   const [tickers, setTickers] = useState<Record<string, Ticker>>({});
   const [connected, setConnected] = useState(false);
   // Start from the snapshot time so server and client render the same text;
@@ -162,21 +160,6 @@ export function LiveDataProvider({
     }, FLUSH_MS);
     return () => clearInterval(id);
   }, []);
-
-  // Background re-fetch of the account snapshot while the tab is visible.
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
-    }, ACCOUNT_REFRESH_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") router.refresh();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [router]);
 
   const value = useMemo<LiveState>(
     () => ({
